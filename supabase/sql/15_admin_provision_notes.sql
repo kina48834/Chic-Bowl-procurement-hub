@@ -1,0 +1,44 @@
+-- 15_admin_provision_notes.sql — documentation only (no-op for the database).
+-- Safe to run in SQL Editor; creates no objects.
+--
+-- Frontend prerequisite (Vite):
+--   • .env.local matches .env.example (same keys/order): General (SUPABASE_PROJECT_*), API
+--     (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY), optional DATABASE_URL.
+--   • Both VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY must be set. If either is missing,
+--     the app runs in local-only mode:
+--     "Add user" stores accounts in the browser only—nothing is written to auth.users or
+--     public.profiles on Supabase.
+--
+-- Admin → User management → "Add user" (with both VITE_SUPABASE_* vars set):
+--   1) The app calls supabase.auth.signUp with email, password, and user_metadata
+--      (display_name, role).
+--   2) Supabase inserts into auth.users; trigger public.handle_new_user() inserts
+--      into public.profiles (id = auth user id, default account_ref, role from metadata).
+--   3) The app restores the admin session, then UPDATEs public.profiles for the new id
+--      (display_name, role, source = provisioned) so values match the admin’s choices.
+--   4) If restore fails, the app sends you to /login and preserves the current URL (e.g.
+--      /admin/user-management) so after you sign in as admin again you return to User management—not /app.
+--
+-- Supabase project requirements:
+--   • Authentication → Providers → Email: enabled
+--   • Allow new users to sign up (or sign-ups will fail from the browser)
+--   • “Confirm email”: if enabled when the user is created, signInWithPassword returns “Email not confirmed” until
+--     they confirm via link OR you manually confirm under Authentication → Users (⋯ / Confirm user).
+--     Turning “Confirm email” off later does not set email_confirmed_at on existing users—those accounts still need
+--     one manual confirm (or delete and re-create the Auth user). For internal demos, keep Confirm email off before
+--     provisioning, or confirm each user in the Users table after creation.
+--
+-- New users appear in Dashboard → Authentication → Users and in Admin → User management
+-- after the accounts list refreshes (public.profiles is the source for roles in the app).
+--
+-- Related SPA routes (hosted + local): /admin/user-management (provision), /admin/inventory and
+-- /manager/inventory (shared stock catalog → inventory_lines), /admin/reports (cross-cutting KPIs).
+--
+-- Passwords:
+--   • public.profiles has no password column; credentials are stored only in auth.users (GoTrue).
+--   • The app does not enforce a minimum length in code; Supabase Auth may still reject passwords
+--     that violate hosted project rules (weak password, length, etc.)—the API error is shown in the UI.
+
+-- Demo Chic Bowl sign-in (emails/passwords + profile upsert): seed/demo_accounts.sql only.
+
+SELECT 1 AS admin_user_management_uses_auth_signup_and_public_profiles;
