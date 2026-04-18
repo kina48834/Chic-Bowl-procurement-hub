@@ -35,7 +35,7 @@ import { PurchaseOrdersPage } from '@/roles/purchasing/PurchaseOrdersPage'
 import { QuotationsPage } from '@/roles/purchasing/QuotationsPage'
 import { SuppliersPage } from '@/roles/purchasing/SuppliersPage'
 import { AuthLayout } from '@/layouts/AuthLayout'
-import { HomePage } from '@/pages/HomePage'
+import { RedirectToRoleDashboard } from '@/routes/RedirectToRoleDashboard'
 import { PublicHomeEntry } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { CatchAllRedirect } from '@/routes/CatchAllRedirect'
@@ -53,7 +53,7 @@ export default function App() {
       </Route>
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
-          <Route path="/app" element={<HomePage />} />
+          <Route path="/app" element={<RedirectToRoleDashboard />} />
           <Route
             path="/inventory"
             element={

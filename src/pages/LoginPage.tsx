@@ -17,7 +17,7 @@ export function LoginPage() {
   const from =
     candidate && candidate !== '/login' && candidate !== '/'
       ? candidate
-      : '/app'
+      : undefined
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

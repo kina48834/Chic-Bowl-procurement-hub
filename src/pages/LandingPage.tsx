@@ -1,7 +1,8 @@
 import { Link, Navigate, NavLink } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
-import { roles } from '@/shared/roles/registry'
+import { defaultDashboardPath } from '@/auth/role-access'
 import { BrandLogo } from '@/shared/components/BrandLogo'
+import { roles } from '@/shared/roles/registry'
 import { uiBtnBlock, uiBtnPrimary, uiBtnSecondary, uiBtnSm } from '@/shared/ui/button'
 
 const flowSteps = [
@@ -33,13 +34,12 @@ const flowSteps = [
 ] as const
 
 /**
- * Marketing home for guests. Signed-in users are redirected to `/app`
- * by `PublicHomeEntry` in `App.tsx`.
+ * Marketing home for guests. Signed-in users go straight to their role dashboard.
  */
 export function PublicHomeEntry() {
   const { user } = useAuth()
   if (user) {
-    return <Navigate to="/app" replace />
+    return <Navigate to={defaultDashboardPath(user)} replace />
   }
   return <LandingPage />
 }

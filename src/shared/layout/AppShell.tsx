@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
-import { canAccessWorkspace } from '@/auth/role-access'
+import { canAccessWorkspace, defaultDashboardPath } from '@/auth/role-access'
 import { BrandLogo } from '@/shared/components/BrandLogo'
 import { getRoleLabel, roles } from '@/shared/roles/registry'
 import { uiBtnSecondary } from '@/shared/ui/button'
@@ -10,10 +10,10 @@ const btnHeader = `${uiBtnSecondary} text-xs font-semibold px-2.5 py-1.5 min-h-9
 const navPill =
   'rounded-lg px-2 py-1.5 text-xs font-medium transition sm:px-2.5 sm:py-1.5 sm:text-sm min-h-9 inline-flex items-center justify-center'
 
-function HeaderLogoLink() {
+function HeaderLogoLink({ homeTo }: { homeTo: string }) {
   return (
     <NavLink
-      to="/app"
+      to={homeTo}
       className="flex min-w-0 shrink-0 items-center transition hover:opacity-90"
       aria-label="Chic Bowl procurement — workspace home"
     >
@@ -28,6 +28,7 @@ export function AppShell() {
     return null
   }
   const roleLabel = getRoleLabel(user.role)
+  const homeTo = defaultDashboardPath(user)
   const workspaceNav =
     user.role === 'admin'
       ? []
@@ -64,7 +65,7 @@ export function AppShell() {
       <header className="sticky top-0 z-20 border-b-2 border-danger/25 bg-surface-card/95 shadow-md backdrop-blur-md">
         <div className="layout-shell flex flex-col gap-1.5 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:py-2.5">
           <div className="flex items-center justify-between gap-2 sm:hidden">
-            <HeaderLogoLink />
+            <HeaderLogoLink homeTo={homeTo} />
             <button
               type="button"
               onClick={() => {
@@ -78,7 +79,7 @@ export function AppShell() {
 
           <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3 lg:gap-4">
             <div className="hidden sm:block">
-              <HeaderLogoLink />
+              <HeaderLogoLink homeTo={homeTo} />
             </div>
             {workspaceNavEl}
           </div>

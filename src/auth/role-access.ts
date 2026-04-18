@@ -11,6 +11,12 @@ export function canAccessWorkspace(
   return user.role === workspaceRole
 }
 
+/** Primary dashboard URL for the signed-in profile (e.g. `/admin/dashboard`, `/purchasing/dashboard`). */
+export function defaultDashboardPath(user: SessionUser): string {
+  const meta = getRoleMeta(user.role)
+  return `${meta.basePath}/dashboard`
+}
+
 /**
  * Where to send the user after a successful sign-in.
  * Ignores stale `from` paths from RequireAuth (e.g. admin should not land on /inventory/dashboard).
@@ -20,14 +26,10 @@ export function resolvePostLoginRedirect(
   from: string | undefined,
 ): string {
   const meta = getRoleMeta(user.role)
-  const home = `${meta.basePath}/dashboard`
+  const home = defaultDashboardPath(user)
 
-  if (!from || from === '/' || from === '/login') {
-    return user.role === 'admin' ? '/app' : home
-  }
-
-  if (from === '/app') {
-    return '/app'
+  if (!from || from === '/' || from === '/login' || from === '/app') {
+    return home
   }
 
   if (user.role === 'admin') {

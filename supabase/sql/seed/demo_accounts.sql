@@ -2,7 +2,7 @@
 -- Upserts public.profiles for the five demo emails (mirrors src/auth/seed-users.ts + Sign in page).
 -- The /login page is email + password only (no role shortcut buttons; no on-screen demo password list).
 -- After sign-in, the app
--- redirects by profile role (admin → /admin/dashboard or /app; inventory-staff → /inventory/dashboard; etc.).
+-- After sign-in, the SPA routes each role to that role’s dashboard (e.g. admin → /admin/dashboard, inventory-staff → /inventory/dashboard).
 -- Operational schema + seeds: inventory_lines.category is constrained in 09_inventory_lines.sql to match
 -- purchase_requests (05); app_settings copy in seed/demo_procurement_data.sql references /admin/reports and catalog routes.
 --

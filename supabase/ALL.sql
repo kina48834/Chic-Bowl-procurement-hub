@@ -517,7 +517,7 @@ COMMENT ON COLUMN public.profiles.account_ref IS 'Random public account id for d
 --   3) The app restores the admin session, then UPDATEs public.profiles for the new id
 --      (display_name, role, source = provisioned) so values match the admin’s choices.
 --   4) If restore fails, the app sends you to /login and preserves the current URL (e.g.
---      /admin/user-management) so after you sign in as admin again you return to User management—not /app.
+--      /admin/user-management) so after you sign in as admin again you return there—not the default dashboard.
 --
 -- Supabase project requirements:
 --   • Authentication → Providers → Email: enabled
@@ -620,7 +620,7 @@ COMMIT;
 -- Upserts public.profiles for the five demo emails (mirrors src/auth/seed-users.ts + Sign in page).
 -- The /login page is email + password only (no role shortcut buttons; no on-screen demo password list).
 -- After sign-in, the app
--- redirects by profile role (admin → /admin/dashboard or /app; inventory-staff → /inventory/dashboard; etc.).
+-- After sign-in, the SPA routes each role to that role’s dashboard (e.g. admin → /admin/dashboard, inventory-staff → /inventory/dashboard).
 -- Operational schema + seeds: inventory_lines.category is constrained in 09_inventory_lines.sql to match
 -- purchase_requests (05); app_settings copy in seed/demo_procurement_data.sql references /admin/reports and catalog routes.
 --

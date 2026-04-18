@@ -10,6 +10,8 @@ Role-based procurement workspace (inventory, purchasing, manager, finance, admin
 
 Operational tables (`suppliers`, `purchase_orders`, `inventory_lines`, etc.) are read/written by **`src/procurement/supabase/sync.ts`** when `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are set.
 
+**Routing:** After sign-in (or visiting `/` while authenticated), users go straight to their role dashboard (e.g. `/admin/dashboard`, `/purchasing/dashboard`). The `/app` path remains as a redirect for old bookmarks.
+
 ## Vercel
 
 1. Import this repo; Vercel should detect **Vite** (root `npm run build`, output **`dist`**).

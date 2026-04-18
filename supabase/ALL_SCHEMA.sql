@@ -510,7 +510,7 @@ COMMENT ON COLUMN public.profiles.account_ref IS 'Random public account id for d
 --   3) The app restores the admin session, then UPDATEs public.profiles for the new id
 --      (display_name, role, source = provisioned) so values match the admin’s choices.
 --   4) If restore fails, the app sends you to /login and preserves the current URL (e.g.
---      /admin/user-management) so after you sign in as admin again you return to User management—not /app.
+--      /admin/user-management) so after you sign in as admin again you return there—not the default dashboard.
 --
 -- Supabase project requirements:
 --   • Authentication → Providers → Email: enabled
