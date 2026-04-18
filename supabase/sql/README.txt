@@ -2,7 +2,9 @@ Categorized SQL for the procurement app (mirrors src/procurement/* and src/auth/
 
 This repo targets hosted Supabase (apply SQL in the dashboard or `psql`). There is no `supabase/config.toml`; if you need the local Supabase CLI stack (`supabase start`), run `supabase init` in the project root to generate one.
 
-Env: `.env.example` and `.env.local` use the same variables in the same order; copy the example to `.env.local` and set secrets (publishable key, DB password). Only `VITE_*` is exposed to the browser.
+The Vite app (local or Vercel) talks to Supabase only via `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`; procurement + profiles use the same client (`src/lib/supabaseClient.ts`, RLS in `13_row_level_security.sql`).
+
+Env: `.env.example` and `.env.local` use the same variables in the same order; copy the example to `.env.local` and set secrets (publishable key, DB password). Only `VITE_*` is exposed to the browser. On Vercel, define the same `VITE_*` variables in Project Settings → Environment Variables.
 
 Run order (numeric):
   01_extensions.sql

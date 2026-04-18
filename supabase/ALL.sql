@@ -499,9 +499,11 @@ COMMENT ON COLUMN public.profiles.account_ref IS 'Random public account id for d
 -- 15_admin_provision_notes.sql — documentation only (no-op for the database).
 -- Safe to run in SQL Editor; creates no objects.
 --
--- Frontend prerequisite (Vite):
---   • .env.local matches .env.example (same keys/order): General (SUPABASE_PROJECT_*), API
+-- Frontend prerequisite (Vite / Vercel):
+--   • Local: `.env.local` matches `.env.example` (same keys/order): General (SUPABASE_PROJECT_*), API
 --     (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY), optional DATABASE_URL.
+--   • Vercel: set the same `VITE_SUPABASE_*` in Environment Variables; in Supabase → Authentication → URL
+--     configuration, allow your production (and preview) origins so sign-in and redirects work.
 --   • Both VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY must be set. If either is missing,
 --     the app runs in local-only mode:
 --     "Add user" stores accounts in the browser only—nothing is written to auth.users or
