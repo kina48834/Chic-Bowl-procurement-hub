@@ -3,7 +3,7 @@ import { useAuth } from '@/auth/useAuth'
 import { defaultDashboardPath } from '@/auth/role-access'
 import { BrandLogo } from '@/shared/components/BrandLogo'
 import { roles } from '@/shared/roles/registry'
-import { uiBtnBlock, uiBtnPrimary, uiBtnSecondary, uiBtnSm } from '@/shared/ui/button'
+import { uiBtnBlock, uiBtnPrimary, uiBtnSecondary } from '@/shared/ui/button'
 
 const flowSteps = [
   {
@@ -56,34 +56,37 @@ function LandingPage() {
       </a>
 
       <header className="sticky top-0 z-20 border-b border-border bg-surface-card/95 shadow-sm backdrop-blur-md">
-        <div className="layout-shell flex flex-col gap-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+        <div className="layout-shell flex items-center justify-between gap-2 py-2 sm:gap-3 sm:py-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <Link
               to="/"
-              className="flex min-w-0 items-center transition hover:opacity-90"
+              className="flex min-w-0 shrink-0 items-center transition hover:opacity-90"
               aria-label="Chic Bowl by 3rd Jen Kitchens — home"
             >
-              <BrandLogo height={52} className="max-w-[min(100%,280px)]" />
+              <BrandLogo
+                height={40}
+                className="h-8 max-h-8 w-auto max-w-[min(100%,11rem)] object-contain object-left sm:h-9 sm:max-h-9 sm:max-w-[13rem]"
+              />
             </Link>
             <NavLink
               to="/"
               end
               className={({ isActive }) =>
-                isActive
-                  ? `ui-btn ${uiBtnSm} min-h-[2.75rem] border-2 border-accent bg-accent-muted px-4 text-ink shadow-inner`
-                  : `${uiBtnSecondary} ${uiBtnSm} min-h-[2.75rem] px-4`
+                [
+                  'ui-btn shrink-0 whitespace-nowrap ui-btn-xs sm:ui-btn-sm',
+                  isActive
+                    ? 'border border-accent bg-accent-muted text-ink shadow-inner'
+                    : 'ui-btn-secondary',
+                ].join(' ')
               }
             >
               Home
             </NavLink>
           </div>
-          <nav
-            className="flex flex-wrap items-center gap-2 sm:gap-3"
-            aria-label="Account"
-          >
+          <nav className="shrink-0" aria-label="Account">
             <Link
               to="/login"
-              className={`${uiBtnPrimary} ${uiBtnSm} min-h-[2.75rem] px-4`}
+              className="ui-btn ui-btn-primary ui-btn-xs whitespace-nowrap sm:ui-btn-sm"
             >
               Sign in
             </Link>
