@@ -1,5 +1,7 @@
 # Chic Bowl — Procurement hub
 
+**Canonical GitHub repository:** [kina48834/Chic-Bowl-procurement-hub](https://github.com/kina48834/Chic-Bowl-procurement-hub) — use this URL for clones, Vercel, and CI (ignore similarly named forks or old test repos).
+
 Role-based procurement workspace (inventory, purchasing, manager, finance, admin) built with **React**, **Vite**, **TypeScript**, **Tailwind**, and **Supabase** (Auth + Postgres). Client-side data sync uses the **publishable key** and **RLS**; no service role in the browser.
 
 ## Supabase (database + auth)
