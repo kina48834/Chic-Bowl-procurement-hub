@@ -1,9 +1,8 @@
 import type { AdminUpdateUserInput } from '@/auth/admin-user-types'
-import * as local from '@/auth/auth-store-local'
 import type { RegisterInput } from '@/auth/auth-store-local'
 import { sessionUserFromProfileRow } from '@/auth/supabase-profile'
 import type { SessionUser } from '@/auth/types'
-import { isSupabaseConfigured, supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/lib/supabaseClient'
 
 export type { RegisterInput } from '@/auth/auth-store-local'
 
@@ -11,6 +10,9 @@ const cloudListeners = new Set<() => void>()
 let cloudSessionUser: SessionUser | null = null
 let cloudAccounts: SessionUser[] = []
 let supabaseListenerStarted = false
+
+/** First `refreshRemoteSession()` after load / pipeline start — await before REST calls that need RLS as `authenticated`. */
+let cloudAuthBootstrapOnce: Promise<void> | null = null
 
 function emitCloud() {
   for (const listener of cloudListeners) listener()
@@ -61,34 +63,35 @@ export async function refreshRemoteSession(): Promise<void> {
   emitCloud()
 }
 
+export function whenCloudAuthHydrated(): Promise<void> {
+  if (!supabase) return Promise.resolve()
+  cloudAuthBootstrapOnce ??= refreshRemoteSession()
+  return cloudAuthBootstrapOnce
+}
+
 function ensureSupabaseAuthPipeline() {
   if (!supabase || supabaseListenerStarted) return
   supabaseListenerStarted = true
-  void refreshRemoteSession()
+  void whenCloudAuthHydrated()
   supabase.auth.onAuthStateChange(() => {
     void refreshRemoteSession()
   })
 }
 
 export function subscribeAuth(listener: () => void) {
-  if (isSupabaseConfigured()) {
-    cloudListeners.add(listener)
-    ensureSupabaseAuthPipeline()
-    return () => {
-      cloudListeners.delete(listener)
-    }
+  cloudListeners.add(listener)
+  ensureSupabaseAuthPipeline()
+  return () => {
+    cloudListeners.delete(listener)
   }
-  return local.localSubscribe(listener)
 }
 
 export function getAuthUserSnapshot(): SessionUser | null {
-  if (isSupabaseConfigured()) return cloudSessionUser
-  return local.localGetAuthUserSnapshot()
+  return cloudSessionUser
 }
 
 export function getAuthAccounts(): SessionUser[] {
-  if (isSupabaseConfigured()) return cloudAccounts
-  return local.localGetAuthAccounts()
+  return cloudAccounts
 }
 
 type AuthUiSnap = {
@@ -121,9 +124,6 @@ export async function authLogin(
   email: string,
   password: string,
 ): Promise<{ ok: true; user: SessionUser } | { ok: false; error: string }> {
-  if (!isSupabaseConfigured()) {
-    return local.localAuthLogin(email, password)
-  }
   if (!supabase) {
     return { ok: false, error: 'Supabase client is not available.' }
   }
@@ -150,33 +150,29 @@ export async function authLogin(
     }
     return { ok: false, error: msg }
   }
+  cloudAuthBootstrapOnce = null
   await refreshRemoteSession()
   if (!cloudSessionUser) {
     return {
       ok: false,
-      error: 'Sign-in failed. Your account may not be fully set up—contact your administrator.',
+      error:
+        'No profile row in the database for this user. Run `supabase/sql/seed/demo_accounts.sql` (or ask an admin to add you under User management) so `public.profiles` matches your Auth account.',
     }
   }
   return { ok: true, user: cloudSessionUser }
 }
 
 export async function authLogout(): Promise<void> {
-  if (isSupabaseConfigured()) {
-    await supabase?.auth.signOut()
-    cloudSessionUser = null
-    cloudAccounts = []
-    emitCloud()
-    return
-  }
-  local.localAuthLogout()
+  cloudAuthBootstrapOnce = null
+  await supabase?.auth.signOut()
+  cloudSessionUser = null
+  cloudAccounts = []
+  emitCloud()
 }
 
 export async function authProvisionUser(
   input: RegisterInput,
 ): Promise<{ ok: true; reauthRequired?: boolean } | { ok: false; error: string }> {
-  if (!isSupabaseConfigured()) {
-    return local.localAuthProvisionUser(input)
-  }
   if (!supabase) {
     return { ok: false, error: 'Supabase client is not available.' }
   }
@@ -308,9 +304,6 @@ export async function authProvisionUser(
 export async function authUpdateUser(
   input: AdminUpdateUserInput,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!isSupabaseConfigured()) {
-    return local.localAuthUpdateUser(input)
-  }
   if (!supabase) {
     return { ok: false, error: 'Supabase client is not available.' }
   }
@@ -378,23 +371,18 @@ export async function authUpdateUser(
 export async function authRemoveUser(
   userId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (isSupabaseConfigured()) {
-    return {
-      ok: false,
-      error:
-        'Supabase mode: remove users from Dashboard → Authentication. Demote or edit roles here if needed.',
-    }
+  void userId
+  return {
+    ok: false,
+    error:
+      'Remove users in Supabase → Authentication. You can change roles from the table above.',
   }
-  return local.localAuthRemoveUser(userId)
 }
 
 export async function authChangePassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!isSupabaseConfigured()) {
-    return local.localAuthChangePassword(currentPassword, newPassword)
-  }
   if (!supabase) {
     return { ok: false, error: 'Supabase client is not available.' }
   }

@@ -37,7 +37,14 @@ const flowSteps = [
  * Marketing home for guests. Signed-in users go straight to their role dashboard.
  */
 export function PublicHomeEntry() {
-  const { user } = useAuth()
+  const { user, authBootstrapped } = useAuth()
+  if (!authBootstrapped) {
+    return (
+      <div className="flex min-h-dvh min-h-svh items-center justify-center text-sm text-ink-muted">
+        Loading…
+      </div>
+    )
+  }
   if (user) {
     return <Navigate to={defaultDashboardPath(user)} replace />
   }

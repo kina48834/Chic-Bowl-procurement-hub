@@ -52,7 +52,7 @@ ALTER TABLE public.inventory_lines ADD CONSTRAINT inventory_lines_category_check
 );
 
 COMMENT ON TABLE public.inventory_lines IS
-  'Inventory staff/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app.';
+  'Inventory staff/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app. RLS (13) limits writes to inventory-staff + admin; the SPA skips inventory_lines sync for other roles so budgets/POs/etc. still persist.';
 
 COMMENT ON COLUMN public.inventory_lines.category IS
   'Same closed set as purchase_requests.category (see 05_purchase_requests.sql); UI labels in src/procurement/stock-catalog.ts.';

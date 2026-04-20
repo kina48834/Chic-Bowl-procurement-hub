@@ -1,8 +1,7 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -18,17 +17,65 @@ import type {
   ProcurementState,
   PurchaseOrder,
 } from '@/procurement/types'
-import {
-  emptyProcurementState,
-  loadProcurementState,
-  saveProcurementState,
-} from '@/procurement/storage'
-import {
-  loadProcurementFromSupabase,
-  persistProcurementToSupabase,
-  persistPurchaseRequestApprovalToSupabase,
-} from '@/procurement/supabase/sync'
-import { isSupabaseConfigured } from '@/lib/supabaseClient'
+import { clearProcurementLocalStorage, emptyProcurementState } from '@/procurement/storage'
+import { whenCloudAuthHydrated } from '@/auth/auth-store'
+import { AUDIT_LOG_MAX_ENTRIES } from '@/procurement/audit-config'
+import { ProcurementContext } from '@/procurement/procurement-context'
+import { loadProcurementFromSupabase, persistProcurementToSupabase } from '@/procurement/supabase/sync'
+
+export type { ProcurementContextValue } from '@/procurement/procurement-context'
+export { useProcurement } from '@/procurement/procurement-context'
+
+/** Serialize Supabase writes so rapid actions (any role) don’t reorder or clobber each other. */
+let procurementPersistChain: Promise<void> = Promise.resolve()
+
+/**
+ * When false, cloud persist is skipped. Prevents persist from running against the empty pre-load
+ * snapshot (deleteOrphans + partial upserts could wipe or corrupt Postgres).
+ */
+const procurementPersistGate = { allowCloudPersist: true }
+
+/** RLS: only inventory-staff + admin may write inventory_lines; other roles skip that table on persist. */
+const procurementPersistInventory = { canMutate: false }
+
+const procurementSyncHandlers: {
+  setError: (err: unknown) => void
+  clearError: () => void
+} = {
+  setError: () => {},
+  clearError: () => {},
+}
+
+function formatProcurementSyncError(err: unknown): string {
+  const msg =
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message: unknown }).message)
+      : err instanceof Error
+        ? err.message
+        : String(err)
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return 'Could not reach the database. Check your connection, confirm VITE_SUPABASE_URL and the publishable key in .env.local, and try a regular browser tab (some embedded previews block requests to Supabase).'
+  }
+  if (/permission denied for table/i.test(msg)) {
+    return 'The database user cannot write this table. In Supabase SQL Editor run `supabase/sql/19_public_api_grants.sql` (or re-run the merged `supabase/ALL.sql` schema sections), then try again.'
+  }
+  if (/no supabase session token|session not ready|jwt/i.test(msg)) {
+    return 'Your Supabase session was not ready. Wait for “Restoring your session…” / “Loading workspace data…” to finish, then try again. If this persists, sign out and sign back in.'
+  }
+  if (/foreign key|violates foreign key constraint|23503/i.test(msg)) {
+    return 'Database rejected a delete because another row still references it. Try again after a full page load; if it continues, check the browser console for the exact table.'
+  }
+  if (
+    /row-level security|violates row-level security|42501|rls/i.test(msg) ||
+    (err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      String((err as { code: unknown }).code) === '42501')
+  ) {
+    return 'The database blocked this write (row security). Re-run `supabase/sql/13_row_level_security.sql` in the Supabase SQL Editor (or the full `ALL.sql` bundle), then refresh. If it persists: confirm you are signed in, `19_public_api_grants.sql` was applied, and Finance/Manager/Purchasing are not editing the stock catalog (only Inventory Staff and Admin can mutate inventory_lines).'
+  }
+  return msg.length > 320 ? `${msg.slice(0, 317)}…` : msg
+}
 
 function audit(
   state: ProcurementState,
@@ -45,18 +92,27 @@ function audit(
   }
   return {
     ...state,
-    auditLog: [entry, ...state.auditLog].slice(0, 500),
+    auditLog: [entry, ...state.auditLog].slice(0, AUDIT_LOG_MAX_ENTRIES),
   }
 }
 
 function commit(next: ProcurementState) {
-  if (isSupabaseConfigured()) {
-    void persistProcurementToSupabase(next).catch((err) => {
+  if (!procurementPersistGate.allowCloudPersist) {
+    return next
+  }
+  procurementPersistChain = procurementPersistChain
+    .then(() =>
+      persistProcurementToSupabase(next, {
+        canMutateInventory: procurementPersistInventory.canMutate,
+      }),
+    )
+    .then(() => {
+      procurementSyncHandlers.clearError()
+    })
+    .catch((err) => {
+      procurementSyncHandlers.setError(err)
       console.error('Supabase procurement sync failed', err)
     })
-  } else {
-    saveProcurementState(next)
-  }
   return next
 }
 
@@ -125,152 +181,48 @@ function bumpInventoryReceived(
   return [...inventory, invLine]
 }
 
-export type ProcurementContextValue = {
-  state: ProcurementState
-  createPurchaseRequest: (
-    input: {
-      category: PRCategory
-      description: string
-      requestReason: string
-      quantity: number
-      unit: string
-    },
-    actorEmail: string,
-  ) => void
-  /** Manager approves only (no reject in this workflow). */
-  reviewPurchaseRequest: (id: string, note: string, actorEmail: string) => void
-  addSupplier: (
-    input: Omit<import('@/procurement/types').Supplier, 'id'>,
-    actorEmail: string,
-  ) => void
-  updateSupplier: (
-    id: string,
-    patch: Partial<import('@/procurement/types').Supplier>,
-    actorEmail: string,
-  ) => void
-  removeSupplier: (id: string, actorEmail: string) => void
-  addQuotation: (
-    input: {
-      supplierId: string
-      title: string
-      price: number
-      qualityNote: string
-      deliveryTerms: string
-    },
-    actorEmail: string,
-  ) => void
-  createPurchaseOrder: (
-    input: {
-      purchaseRequestId: string
-      supplierId: string
-      itemsSummary: string
-      total: number
-      inventoryCatalogId?: string
-    },
-    actorEmail: string,
-  ) => { ok: true } | { ok: false; error: string }
-  submitPOForApproval: (id: string, actorEmail: string) => void
-  updatePurchaseOrderDraft: (
-    id: string,
-    patch: Partial<
-      Pick<PurchaseOrder, 'itemsSummary' | 'total' | 'supplierId' | 'inventoryCatalogId'>
-    >,
-    actorEmail: string,
-  ) => void
-  /** Finance approves or returns PO to Purchasing with a note. */
-  reviewPurchaseOrder: (
-    id: string,
-    status: Extract<POStatus, 'approved' | 'returned_by_finance'>,
-    note: string,
-    actorEmail: string,
-  ) => void
-  sendPurchaseOrder: (id: string, actorEmail: string) => void
-  shipPurchaseOrder: (id: string, actorEmail: string) => void
-  receiveDelivery: (
-    deliveryId: string,
-    input: {
-      quantityAccepted: number
-      quantityRejected: number
-      qualityNotes: string
-      outcome: Extract<DeliveryStatus, 'accepted' | 'rejected' | 'partially_accepted'>
-      rejectionItemName?: string
-      rejectionReason?: string
-      photoUrls?: string[]
-    },
-    actorEmail: string,
-  ) => void
-  adjustInventoryQuantity: (
-    lineId: string,
-    quantity: number,
-    actorEmail: string,
-  ) => void
-  createInventoryLine: (
-    input: {
-      name: string
-      category: string
-      quantity: number
-      unit: string
-      reorderThreshold?: number
-    },
-    actorEmail: string,
-  ) => void
-  updateInventoryLine: (
-    id: string,
-    patch: Partial<
-      Pick<
-        import('@/procurement/types').InventoryLine,
-        'name' | 'category' | 'quantity' | 'unit' | 'reorderThreshold'
-      >
-    >,
-    actorEmail: string,
-  ) => void
-  removeInventoryLine: (
-    id: string,
-    actorEmail: string,
-  ) => { ok: true } | { ok: false; error: string }
-  createBudgetRequest: (
-    input: {
-      title: string
-      amount: number
-      purchaseRequestId?: string
-      notes: string
-    },
-    actorEmail: string,
-  ) => void
-  reviewBudgetRequest: (
-    id: string,
-    status: Extract<BudgetStatus, 'approved' | 'denied'>,
-    actorEmail: string,
-  ) => void
-  createPayment: (
-    input: {
-      supplierId: string
-      purchaseOrderId?: string
-      amount: number
-      reference: string
-    },
-    actorEmail: string,
-  ) => void
-  markPaymentPaid: (id: string, actorEmail: string) => void
-  updateSettings: (
-    patch: Partial<import('@/procurement/types').AppSettings>,
-    actorEmail: string,
-  ) => void
-  adminOverrideNote: (note: string, actorEmail: string) => void
-}
-
-const ProcurementContext = createContext<ProcurementContextValue | null>(null)
-
 export function ProcurementProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  const [state, setState] = useState<ProcurementState>(() =>
-    isSupabaseConfigured() ? emptyProcurementState() : loadProcurementState(),
-  )
+  const [state, setState] = useState<ProcurementState>(() => emptyProcurementState())
+  const [procurementSyncError, setProcurementSyncError] = useState<string | null>(null)
+  const [procurementCloudHydrated, setProcurementCloudHydrated] = useState(true)
+
+  // RLS: inventory_lines writes only for inventory-staff + admin. Must NOT tie this to user?.id
+  // together with the gate below — when role arrives or updates after load, re-running the id+role
+  // gate would set allowCloudPersist=false without re-fetch (useEffect only keys on id), so finance
+  // / manager / purchasing would stop persisting everything (not just inventory).
+  useLayoutEffect(() => {
+    procurementPersistInventory.canMutate =
+      Boolean(user?.id) &&
+      (user?.role === 'inventory-staff' || user?.role === 'admin')
+  }, [user?.id, user?.role])
+
+  useLayoutEffect(() => {
+    if (!user) {
+      procurementPersistGate.allowCloudPersist = false
+      setProcurementCloudHydrated(true)
+      return
+    }
+    procurementPersistGate.allowCloudPersist = false
+    setProcurementCloudHydrated(false)
+  }, [user?.id])
+
+  useLayoutEffect(() => {
+    procurementSyncHandlers.setError = (err) =>
+      setProcurementSyncError(formatProcurementSyncError(err))
+    procurementSyncHandlers.clearError = () => setProcurementSyncError(null)
+  }, [])
+
+  const dismissProcurementSyncError = useCallback(() => {
+    setProcurementSyncError(null)
+  }, [])
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return
     let cancelled = false
+    procurementPersistChain = Promise.resolve()
     if (!user) {
+      clearProcurementLocalStorage()
+      setProcurementSyncError(null)
       void Promise.resolve().then(() => {
         if (!cancelled) setState(emptyProcurementState())
       })
@@ -278,13 +230,27 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         cancelled = true
       }
     }
-    void loadProcurementFromSupabase()
-      .then((next) => {
-        if (!cancelled) setState(next)
-      })
-      .catch((err) => {
+    void (async () => {
+      try {
+        await whenCloudAuthHydrated()
+        if (cancelled) return
+        const next = await loadProcurementFromSupabase()
+        if (!cancelled) {
+          procurementPersistGate.allowCloudPersist = true
+          clearProcurementLocalStorage()
+          setProcurementSyncError(null)
+          setState(next)
+          setProcurementCloudHydrated(true)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          procurementPersistGate.allowCloudPersist = false
+          setProcurementSyncError(formatProcurementSyncError(err))
+          setProcurementCloudHydrated(true)
+        }
         console.error('loadProcurementFromSupabase', err)
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -348,20 +314,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         'PR approved',
         `${row.description}: ${note.trim() || '—'}`,
       )
-      const head = next.auditLog[0]
-      if (isSupabaseConfigured()) {
-        void (async () => {
-          try {
-            await persistPurchaseRequestApprovalToSupabase(updated, head)
-            await persistProcurementToSupabase(next)
-          } catch (err) {
-            console.error('Supabase PR approval sync failed', err)
-          }
-        })()
-      } else {
-        saveProcurementState(next)
-      }
-      return next
+      return commit(next)
     })
   }, [])
 
@@ -982,6 +935,18 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const adminClearAuditLog = useCallback(() => {
+    setState((prev) => commit({ ...prev, auditLog: [] }))
+  }, [])
+
+  const adminTrimAuditLog = useCallback((keep: number) => {
+    const k = Math.max(0, Math.min(Math.floor(keep), AUDIT_LOG_MAX_ENTRIES))
+    setState((prev) => {
+      const trimmed = prev.auditLog.slice(0, k)
+      return commit({ ...prev, auditLog: trimmed })
+    })
+  }, [])
+
   const value = useMemo(
     () => ({
       state,
@@ -1008,6 +973,11 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       markPaymentPaid,
       updateSettings,
       adminOverrideNote,
+      adminClearAuditLog,
+      adminTrimAuditLog,
+      procurementSyncError,
+      dismissProcurementSyncError,
+      procurementCloudHydrated,
     }),
     [
       state,
@@ -1034,19 +1004,29 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       markPaymentPaid,
       updateSettings,
       adminOverrideNote,
+      adminClearAuditLog,
+      adminTrimAuditLog,
+      procurementSyncError,
+      dismissProcurementSyncError,
+      procurementCloudHydrated,
     ],
   )
 
-  return (
-    <ProcurementContext.Provider value={value}>{children}</ProcurementContext.Provider>
-  )
-}
+  const cloudLoading = Boolean(user) && !procurementCloudHydrated
 
-/* eslint-disable react-refresh/only-export-components -- hook must live next to provider API */
-export function useProcurement() {
-  const ctx = useContext(ProcurementContext)
-  if (!ctx) {
-    throw new Error('useProcurement must be used within ProcurementProvider')
-  }
-  return ctx
+  return (
+    <ProcurementContext.Provider value={value}>
+      {cloudLoading ? (
+        <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 px-4 text-center">
+          <p className="text-sm font-medium text-ink">Loading workspace data…</p>
+          <p className="max-w-md text-xs text-ink-muted">
+            Pulling procurement records from Supabase. Editing is enabled after this completes so
+            nothing is saved from an empty partial state.
+          </p>
+        </div>
+      ) : (
+        children
+      )}
+    </ProcurementContext.Provider>
+  )
 }

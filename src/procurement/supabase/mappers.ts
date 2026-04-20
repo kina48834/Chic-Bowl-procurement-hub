@@ -1,3 +1,4 @@
+import { AUDIT_LOG_MAX_ENTRIES } from '@/procurement/audit-config'
 import type {
   AppSettings,
   AuditEntry,
@@ -209,7 +210,7 @@ export function procurementStateFromSupabaseRows(input: {
     inventory: (input.inventory ?? []).map(mapInventoryRow),
     budgetRequests: (input.budgetRequests ?? []).map(mapBudgetRow),
     payments: (input.payments ?? []).map(mapPaymentRow),
-    auditLog: (input.auditLog ?? []).map(mapAuditRow),
+    auditLog: (input.auditLog ?? []).map(mapAuditRow).slice(0, AUDIT_LOG_MAX_ENTRIES),
   }
 }
 

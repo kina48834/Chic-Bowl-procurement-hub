@@ -1,5 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { AuthContext } from '@/auth/auth-context'
 import {
   authChangePassword,
@@ -10,8 +9,8 @@ import {
   authUpdateUser,
   getAuthUiSnapshot,
   subscribeAuth,
+  whenCloudAuthHydrated,
 } from '@/auth/auth-store'
-import { isSupabaseConfigured } from '@/lib/supabaseClient'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { user, accounts } = useSyncExternalStore(
@@ -20,11 +19,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getAuthUiSnapshot,
   )
 
+  const [authBootstrapped, setAuthBootstrapped] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void whenCloudAuthHydrated().finally(() => {
+      if (!cancelled) setAuthBootstrapped(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const value = useMemo(
     () => ({
       user,
       accounts,
-      usesSupabase: isSupabaseConfigured(),
+      usesSupabase: true,
+      authBootstrapped,
       login: authLogin,
       provisionUser: authProvisionUser,
       updateUser: authUpdateUser,
@@ -32,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword: authChangePassword,
       logout: authLogout,
     }),
-    [user, accounts],
+    [user, accounts, authBootstrapped],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

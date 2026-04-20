@@ -15,4 +15,5 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
 
 CREATE INDEX IF NOT EXISTS suppliers_active_idx ON public.suppliers (active) WHERE active = true;
 
-COMMENT ON TABLE public.suppliers IS 'Vendor master; mirrors Supplier type';
+COMMENT ON TABLE public.suppliers IS
+  'Vendor master; mirrors Supplier type. purchase_orders.supplier_id and payments.supplier_id use ON DELETE RESTRICT — the SPA uses FK-safe orphan cleanup (src/procurement/supabase/sync.ts deleteSupplierOrphansSafe) so persist never fails when adding suppliers while seed POs still reference seed suppliers.';

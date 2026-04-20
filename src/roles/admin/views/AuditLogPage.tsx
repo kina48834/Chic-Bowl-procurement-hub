@@ -1,7 +1,12 @@
-import { useMemo, useState } from 'react'
-import { useAuth } from '@/auth/useAuth'
+import { useEffect, useMemo, useState } from 'react'
+import { AUDIT_LOG_MAX_ENTRIES, AUDIT_LOG_UI_INITIAL_ROWS } from '@/procurement/audit-config'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { uiBtnGhost, uiBtnSm } from '@/shared/ui/button'
+import {
+  uiBtnDangerSoft,
+  uiBtnGhost,
+  uiBtnSecondary,
+  uiBtnSm,
+} from '@/shared/ui/button'
 
 function actionChipClass(action: string): string {
   const a = action.toLowerCase()
@@ -49,9 +54,9 @@ function formatWhen(iso: string): { short: string; full: string } {
 }
 
 export function AuditLogPage() {
-  const { usesSupabase } = useAuth()
-  const { state } = useProcurement()
+  const { state, adminClearAuditLog, adminTrimAuditLog } = useProcurement()
   const [query, setQuery] = useState('')
+  const [visibleCount, setVisibleCount] = useState(AUDIT_LOG_UI_INITIAL_ROWS)
 
   const entries = state.auditLog
 
@@ -65,6 +70,15 @@ export function AuditLogPage() {
         e.detail.toLowerCase().includes(q),
     )
   }, [entries, query])
+
+  useEffect(() => {
+    setVisibleCount(AUDIT_LOG_UI_INITIAL_ROWS)
+  }, [entries.length, query])
+
+  const displayed = useMemo(
+    () => filtered.slice(0, Math.min(visibleCount, filtered.length)),
+    [filtered, visibleCount],
+  )
 
   const stats = useMemo(() => {
     const actors = new Set(entries.map((e) => e.actorEmail.toLowerCase()))
@@ -92,18 +106,96 @@ export function AuditLogPage() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
             Chronological trail of procurement and configuration changes with actor and timestamp.
-            {usesSupabase
-              ? ' Events are stored in your linked database when using cloud mode.'
-              : ' In local demo mode, events stay in this browser until you clear site data.'}
+            Events sync to your Supabase project; the hub only retains the newest entries so the table
+            does not grow without bound.
           </p>
         </div>
       </section>
+
+      <div
+        className="rounded-xl border border-accent/25 bg-accent-muted/20 px-4 py-3 text-sm leading-relaxed text-ink sm:px-5"
+        role="note"
+      >
+        <p className="font-semibold text-ink">Why the log is capped</p>
+        <p className="mt-1 text-ink-muted">
+          Every role action can add a row. To avoid over-populating{' '}
+          <code className="rounded bg-surface px-1 py-0.5 text-xs text-ink">audit_log</code> in
+          Postgres (and slowing loads), the app keeps at most{' '}
+          <strong className="text-ink">{AUDIT_LOG_MAX_ENTRIES}</strong> newest events. Older lines
+          drop off automatically as new ones arrive. Use the controls below to clear or trim history
+          sooner—for example before exports or when testing.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-card px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">Log maintenance</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Deletes apply after the next sync to Postgres.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={`${uiBtnSecondary} ${uiBtnSm}`}
+            disabled={entries.length === 0}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Keep only the 50 newest entries? Older rows are removed on the next save (cloud sync).',
+                )
+              ) {
+                return
+              }
+              adminTrimAuditLog(50)
+            }}
+          >
+            Keep last 50
+          </button>
+          <button
+            type="button"
+            className={`${uiBtnSecondary} ${uiBtnSm}`}
+            disabled={entries.length === 0}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Keep only the 25 newest entries? Older rows are removed on the next save.',
+                )
+              ) {
+                return
+              }
+              adminTrimAuditLog(25)
+            }}
+          >
+            Keep last 25
+          </button>
+          <button
+            type="button"
+            className={`${uiBtnDangerSoft} ${uiBtnSm}`}
+            disabled={entries.length === 0}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Delete all audit events? This cannot be undone. Operational data (orders, suppliers, etc.) is not affected.',
+                )
+              ) {
+                return
+              }
+              adminClearAuditLog()
+            }}
+          >
+            Clear all events
+          </button>
+        </div>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="ui-panel p-4 sm:p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Events</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">{stats.total}</p>
-          <p className="mt-1 text-xs text-ink-muted">Newest first (max 500 kept)</p>
+          <p className="mt-1 text-xs text-ink-muted">
+            Newest first (max {AUDIT_LOG_MAX_ENTRIES} retained)
+          </p>
         </div>
         <div className="ui-panel p-4 sm:p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Actors</p>
@@ -124,7 +216,8 @@ export function AuditLogPage() {
           <div>
             <h2 className="text-sm font-semibold text-ink">Activity stream</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
-              Filter by action keyword, email, or detail text.
+              Showing up to {displayed.length} rows here (paginated view). Filter by action, email, or
+              detail.
             </p>
           </div>
           <div className="flex w-full max-w-md flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
@@ -174,7 +267,7 @@ export function AuditLogPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border bg-surface-card">
-                {filtered.map((a) => {
+                {displayed.map((a) => {
                   const when = formatWhen(a.at)
                   return (
                     <tr
@@ -213,9 +306,33 @@ export function AuditLogPage() {
           </div>
         )}
 
+        {filtered.length > 0 && visibleCount < filtered.length ? (
+          <div className="border-t border-border px-4 py-3 text-center sm:px-5">
+            <button
+              type="button"
+              className={`${uiBtnSecondary} ${uiBtnSm}`}
+              onClick={() =>
+                setVisibleCount((c) =>
+                  Math.min(c + AUDIT_LOG_UI_INITIAL_ROWS, filtered.length),
+                )
+              }
+            >
+              Show more ({filtered.length - displayed.length} left)
+            </button>
+          </div>
+        ) : null}
+
         {query && filtered.length > 0 ? (
           <p className="border-t border-border px-4 py-2 text-center text-xs text-ink-muted sm:px-5">
-            Showing {filtered.length} of {entries.length} entries
+            {visibleCount < filtered.length
+              ? `Showing ${displayed.length} of ${filtered.length} matches (${entries.length} total in log)`
+              : `Showing ${filtered.length} of ${entries.length} entries`}
+          </p>
+        ) : filtered.length > 0 && visibleCount >= filtered.length ? (
+          <p className="border-t border-border px-4 py-2 text-center text-xs text-ink-muted sm:px-5">
+            {displayed.length < entries.length
+              ? `Showing ${displayed.length} of ${entries.length} entries (use Show more or clear search)`
+              : `Showing all ${entries.length} entries`}
           </p>
         ) : null}
       </section>

@@ -4,13 +4,13 @@ import { getRoleLabel, roles } from '@/shared/roles/registry'
 import { uiBtnPrimary, uiBtnSecondary } from '@/shared/ui/button'
 
 function sourceLabel(source: 'seed' | 'registration' | 'provisioned') {
-  if (source === 'seed') return 'Seeded demo'
-  if (source === 'provisioned') return 'Admin provisioned (local)'
+  if (source === 'seed') return 'Bootstrap account (SQL / local store)'
+  if (source === 'provisioned') return 'Admin provisioned'
   return 'Self-registration'
 }
 
 export function WorkspaceProfilePage() {
-  const { user, usesSupabase, changePassword } = useAuth()
+  const { user, changePassword } = useAuth()
   const [currentPwd, setCurrentPwd] = useState('')
   const [nextPwd, setNextPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
@@ -24,7 +24,7 @@ export function WorkspaceProfilePage() {
 
   const roleMeta = roles.find((r) => r.id === user.role)
   const initial = user.displayName.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()
-  const showAuthId = usesSupabase && user.id !== user.accountRef
+  const showAuthId = user.id !== user.accountRef
 
   const onPasswordSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -79,9 +79,8 @@ export function WorkspaceProfilePage() {
               Your name and role are maintained by an{' '}
               <strong className="font-medium text-ink">admin</strong> in{' '}
               <span className="whitespace-nowrap font-medium text-ink">User management</span>.
-              {usesSupabase
-                ? ' Passwords use Supabase Authentication.'
-                : ' Passwords for this demo are stored only in this browser.'}
+              {' '}
+              Passwords use Supabase Authentication.
             </p>
           </div>
         </div>
@@ -131,9 +130,7 @@ export function WorkspaceProfilePage() {
         <section className="ui-panel flex flex-col p-5 sm:p-6">
           <h2 className="text-sm font-semibold text-ink">Change password</h2>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-            {usesSupabase
-              ? 'Confirm your current password, then choose a new one. This updates Supabase Auth.'
-              : 'Updates the password stored locally for this browser session.'}
+            Confirm your current password, then choose a new one. This updates Supabase Auth.
           </p>
           <form className="mt-5 flex flex-col gap-4" onSubmit={onPasswordSubmit}>
             <div className="space-y-1.5">

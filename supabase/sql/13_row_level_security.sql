@@ -79,11 +79,14 @@ CREATE POLICY "profiles_update_own" ON public.profiles
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Demo / internal hub: allow any signed-in user full CRUD on operational tables
--- except inventory_lines (mutations there are restricted to inventory-staff/admin below).
+-- Hub operational tables: full CRUD for role `authenticated` (JWT from the signed-in user).
+-- Use explicit SELECT / INSERT / UPDATE / DELETE policies instead of FOR ALL so PostgREST
+-- upserts and multi-table sync (see src/procurement/supabase/sync.ts) do not hit driver
+-- edge cases (e.g. 42501 on payments).
 DO $$
 DECLARE
   t text;
+  r record;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'app_settings',
@@ -97,9 +100,33 @@ BEGIN
     'audit_log'
   ]
   LOOP
-    EXECUTE format('DROP POLICY IF EXISTS "authenticated_full_access" ON public.%I', t);
+    FOR r IN
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = t
+    LOOP
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, t);
+    END LOOP;
+
     EXECUTE format(
-      'CREATE POLICY "authenticated_full_access" ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true)',
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (true)',
+      'hub_' || t || '_select',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (true)',
+      'hub_' || t || '_insert',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (true) WITH CHECK (true)',
+      'hub_' || t || '_update',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (true)',
+      'hub_' || t || '_delete',
       t
     );
   END LOOP;
@@ -118,6 +145,9 @@ CREATE POLICY "inventory_lines_mutate_inventory_staff_admin" ON public.inventory
   FOR ALL TO authenticated
   USING (public.current_profile_role() IN ('inventory-staff', 'admin'))
   WITH CHECK (public.current_profile_role() IN ('inventory-staff', 'admin'));
+
+-- Note: src/procurement/supabase/sync.ts skips inventory_lines DELETE/UPSERT for other roles so
+-- finance/manager/purchasing can still persist POs, budgets, payments, etc. without RLS aborting the whole batch.
 
 -- Admins: full profile visibility (is_profile_admin bypasses RLS on the inner read).
 CREATE POLICY "profiles_admin_select_all" ON public.profiles

@@ -1,4 +1,4 @@
-import { InventoryManagementPage } from '@/roles/manager/InventoryManagementPage'
+import { InventoryManagementPage } from '@/roles/manager/views/InventoryManagementPage'
 
 type InventoryCatalogPageProps = {
   inventoryContext?: 'inventory-staff' | 'admin'

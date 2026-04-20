@@ -8,6 +8,11 @@ export type AuthContextValue = {
   accounts: SessionUser[]
   /** When true, sign-in uses Supabase Auth and procurement data uses Postgres. */
   usesSupabase: boolean
+  /**
+   * Hosted Supabase: false until the first session restore from storage finishes.
+   * Avoids treating “no user yet” as logged out and avoids REST calls before the JWT exists.
+   */
+  authBootstrapped: boolean
   login: (
     email: string,
     password: string,

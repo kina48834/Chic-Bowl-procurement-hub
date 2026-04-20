@@ -3,13 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { roles } from '@/shared/roles/registry'
 import type { RoleId } from '@/shared/types/nav'
-import { RoleWorkspaceHint } from '@/roles/admin/user-management/RoleWorkspaceHint'
+import { RoleWorkspaceHint } from './RoleWorkspaceHint'
 import { uiBtnPrimary } from '@/shared/ui/button'
 
 export function AddUserForm() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { provisionUser, usesSupabase } = useAuth()
+  const { provisionUser } = useAuth()
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -43,9 +43,7 @@ export function AddUserForm() {
       return
     }
     setMessage(
-      usesSupabase
-        ? `Provisioned ${email.trim().toLowerCase()} as ${role}. If sign-in shows “Email not confirmed”, confirm that user under Authentication → Users (⋯)—turning off Confirm email in Providers does not retroactively confirm existing users.`
-        : `Provisioned ${email.trim().toLowerCase()} as ${role}.`,
+      `Provisioned ${email.trim().toLowerCase()} as ${role}. If sign-in shows “Email not confirmed”, confirm that user under Authentication → Users (⋯)—turning off Confirm email in Providers does not retroactively confirm existing users.`,
     )
     setDisplayName('')
     setEmail('')
@@ -56,17 +54,15 @@ export function AddUserForm() {
     <section className="rounded-2xl border border-border bg-surface-card p-6 shadow-sm">
       <h2 className="text-sm font-semibold text-ink">Add user</h2>
       <p className="mt-1 text-sm text-ink-muted">
-        {usesSupabase
-          ? 'Creates a row in Supabase Auth and public.profiles with the role you choose. The app restores your admin session after sign-up when possible. Requires Email provider enabled and “Allow new users” in Supabase → Authentication.'
-          : "Creates an account in this browser's storage with any workspace role. Public self-registration is disabled—only admins provision users here."}
+        Creates a row in Supabase Auth and <code className="text-xs text-ink">public.profiles</code> with the role you
+        choose. The app restores your admin session after sign-up when possible. Requires Email provider enabled and
+        “Allow new users” in Supabase → Authentication.
       </p>
-      {usesSupabase ? (
-        <p className="mt-3 rounded-lg border border-border bg-surface-muted/40 px-3 py-2 text-xs leading-relaxed text-ink-muted">
-          New users show under <span className="font-medium text-ink">Authentication → Users</span> and here once the
-          list reloads. If Supabase rejects a password (project policy), the error from Auth appears below. If session
-          restore fails, you’ll be redirected to sign in again as admin—the new account may still be created.
-        </p>
-      ) : null}
+      <p className="mt-3 rounded-lg border border-border bg-surface-muted/40 px-3 py-2 text-xs leading-relaxed text-ink-muted">
+        New users show under <span className="font-medium text-ink">Authentication → Users</span> and here once the list
+        reloads. If Supabase rejects a password (project policy), the error from Auth appears below. If session restore
+        fails, you’ll be redirected to sign in again as admin—the new account may still be created.
+      </p>
       <form className="mt-4 flex flex-col gap-5" onSubmit={handleSubmit}>
         <div className="max-w-xl space-y-3 rounded-xl border border-border/90 bg-surface/60 p-4 shadow-inner">
           <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-ink-muted">

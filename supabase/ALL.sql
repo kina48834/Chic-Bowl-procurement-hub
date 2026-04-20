@@ -1,4 +1,4 @@
--- ALL.sql — full bundle: schema (01–17) + demo procurement seed + demo account profiles.
+-- ALL.sql — full bundle: schema (01–20) + demo procurement seed + demo account profiles.
 -- Regenerate: npm run supabase:merge
 --
 -- Before running:
@@ -6,11 +6,34 @@
 --     (bcrypt passwords) and upserts public.profiles. No manual Authentication → Users step required.
 --
 -- Sections in order:
---   1) 01_extensions … 17_audit_log_indexes (15 documents admin provision; 16 workflow migration; 17 audit indexes)
+--   1) 01_extensions … 20_rls_session_notes (19 grants; 20 JWT/RLS notes)
 --   2) seed/demo_procurement_data.sql — truncates operational tables, loads sample rows
 --   3) seed/demo_accounts.sql — demo Auth users + identities + public.profiles
 --
 
+-- Manifest — numbered files concatenated below (merge script fails if any 01–20 is missing):
+--   • 01_extensions.sql
+--   • 02_profiles.sql
+--   • 03_app_settings.sql
+--   • 04_suppliers.sql
+--   • 05_purchase_requests.sql
+--   • 06_quotations.sql
+--   • 07_purchase_orders.sql
+--   • 08_deliveries.sql
+--   • 09_inventory_lines.sql
+--   • 10_budget_requests.sql
+--   • 11_payments.sql
+--   • 12_audit_log.sql
+--   • 13_row_level_security.sql
+--   • 14_profile_account_ref.sql
+--   • 15_admin_provision_notes.sql
+--   • 16_procurement_workflow_migration.sql
+--   • 17_audit_log_indexes.sql
+--   • 18_app_supabase_connectivity_notes.sql
+--   • 19_public_api_grants.sql
+--   • 20_rls_session_notes.sql
+-- ALL.sql additionally appends: seed/demo_procurement_data.sql, seed/demo_accounts.sql
+--
 -- ===== 01_extensions.sql =====
 -- 01_extensions.sql — optional database extensions (Supabase has most pre-enabled).
 -- gen_random_uuid() is available without extra extensions on Supabase.
@@ -123,7 +146,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 INSERT INTO public.app_settings (id, company_name, system_notes, last_override_note)
 VALUES (
   1,
-  'Chic Bowl by 3rd Jen Kitchens',
+  'Procurement Hub',
   '',
   ''
 )
@@ -149,7 +172,8 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
 
 CREATE INDEX IF NOT EXISTS suppliers_active_idx ON public.suppliers (active) WHERE active = true;
 
-COMMENT ON TABLE public.suppliers IS 'Vendor master; mirrors Supplier type';
+COMMENT ON TABLE public.suppliers IS
+  'Vendor master; mirrors Supplier type. purchase_orders.supplier_id and payments.supplier_id use ON DELETE RESTRICT — the SPA uses FK-safe orphan cleanup (src/procurement/supabase/sync.ts deleteSupplierOrphansSafe) so persist never fails when adding suppliers while seed POs still reference seed suppliers.';
 
 -- ===== 05_purchase_requests.sql =====
 -- 05_purchase_requests.sql — purchase requests (mirrors PurchaseRequest).
@@ -327,7 +351,7 @@ ALTER TABLE public.inventory_lines ADD CONSTRAINT inventory_lines_category_check
 );
 
 COMMENT ON TABLE public.inventory_lines IS
-  'Inventory staff/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app.';
+  'Inventory staff/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app. RLS (13) limits writes to inventory-staff + admin; the SPA skips inventory_lines sync for other roles so budgets/POs/etc. still persist.';
 
 COMMENT ON COLUMN public.inventory_lines.category IS
   'Same closed set as purchase_requests.category (see 05_purchase_requests.sql); UI labels in src/procurement/stock-catalog.ts.';
@@ -365,7 +389,8 @@ CREATE TABLE IF NOT EXISTS public.budget_requests (
 
 CREATE INDEX IF NOT EXISTS budget_requests_status_idx ON public.budget_requests (status);
 
-COMMENT ON TABLE public.budget_requests IS 'Finance budget review; mirrors BudgetRequest';
+COMMENT ON TABLE public.budget_requests IS
+  'Finance budget review; mirrors BudgetRequest. Same RLS as other hub tables (authenticated full access in 13_row_level_security.sql). If saves disappear on refresh, fix the SPA session/persist gate — not this DDL.';
 
 -- ===== 11_payments.sql =====
 -- 11_payments.sql — supplier payments (mirrors Payment).
@@ -410,7 +435,8 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 
 CREATE INDEX IF NOT EXISTS audit_log_at_idx ON public.audit_log (at DESC);
 
-COMMENT ON TABLE public.audit_log IS 'Append-only style log; mirrors AuditEntry';
+COMMENT ON TABLE public.audit_log IS
+  'Procurement audit trail; mirrors AuditEntry. The SPA keeps at most ~120 newest events (see src/procurement/audit-config.ts AUDIT_LOG_MAX_ENTRIES) and syncs that slice to Postgres. Admins can clear or trim the log from /admin/audit-log to avoid unbounded growth; empty log deletes all rows on next persist.';
 
 -- ===== 13_row_level_security.sql =====
 -- 13_row_level_security.sql — RLS scaffolding (demo-friendly).
@@ -494,11 +520,14 @@ CREATE POLICY "profiles_update_own" ON public.profiles
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Demo / internal hub: allow any signed-in user full CRUD on operational tables
--- except inventory_lines (mutations there are restricted to inventory-staff/admin below).
+-- Hub operational tables: full CRUD for role `authenticated` (JWT from the signed-in user).
+-- Use explicit SELECT / INSERT / UPDATE / DELETE policies instead of FOR ALL so PostgREST
+-- upserts and multi-table sync (see src/procurement/supabase/sync.ts) do not hit driver
+-- edge cases (e.g. 42501 on payments).
 DO $$
 DECLARE
   t text;
+  r record;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'app_settings',
@@ -512,9 +541,33 @@ BEGIN
     'audit_log'
   ]
   LOOP
-    EXECUTE format('DROP POLICY IF EXISTS "authenticated_full_access" ON public.%I', t);
+    FOR r IN
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = t
+    LOOP
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, t);
+    END LOOP;
+
     EXECUTE format(
-      'CREATE POLICY "authenticated_full_access" ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true)',
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (true)',
+      'hub_' || t || '_select',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (true)',
+      'hub_' || t || '_insert',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (true) WITH CHECK (true)',
+      'hub_' || t || '_update',
+      t
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (true)',
+      'hub_' || t || '_delete',
       t
     );
   END LOOP;
@@ -533,6 +586,9 @@ CREATE POLICY "inventory_lines_mutate_inventory_staff_admin" ON public.inventory
   FOR ALL TO authenticated
   USING (public.current_profile_role() IN ('inventory-staff', 'admin'))
   WITH CHECK (public.current_profile_role() IN ('inventory-staff', 'admin'));
+
+-- Note: src/procurement/supabase/sync.ts skips inventory_lines DELETE/UPSERT for other roles so
+-- finance/manager/purchasing can still persist POs, budgets, payments, etc. without RLS aborting the whole batch.
 
 -- Admins: full profile visibility (is_profile_admin bypasses RLS on the inner read).
 CREATE POLICY "profiles_admin_select_all" ON public.profiles
@@ -706,14 +762,96 @@ CREATE INDEX IF NOT EXISTS audit_log_actor_lower_idx ON public.audit_log (lower(
 COMMENT ON INDEX public.audit_log_action_idx IS 'Filter audit rows by action (e.g. PR approved)';
 COMMENT ON INDEX public.audit_log_actor_lower_idx IS 'Filter audit rows by actor email';
 
--- ===== seed/demo_procurement_data.sql =====
--- seed/demo_procurement_data.sql — demo procurement rows (mirrors src/procurement/seed.ts).
--- Run after core schema (supabase/sql/01–16). Safe to re-run: truncates operational tables only.
+-- ===== 18_app_supabase_connectivity_notes.sql =====
+-- 18_app_supabase_connectivity_notes.sql — documentation only (no DDL).
+-- Aligns with: src/lib/supabaseClient.ts, src/procurement/supabase/sync.ts,
+--             src/procurement/ProcurementProvider.tsx, supabase/sql/13_row_level_security.sql
 --
--- SPA alignment:
---   • Fixed stock catalog + low-stock thresholds: /inventory/catalog
---   • Finance PO approval: /finance/po-approvals
---   • Manager PR approval (approve only): /manager/approvals/requests
+-- How the browser talks to this schema
+--   • The Vite SPA never opens a raw Postgres connection. It uses the Supabase REST API
+--     (PostgREST) with the project URL + publishable (anon) key from the environment.
+--   • Required env (see .env.example): VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY
+--     (trimmed in the app; URL should be https://<ref>.supabase.co or local http://127.0.0.1:54321).
+--
+-- How procurement data is written
+--   • inventory_lines: RLS allows mutations only for inventory-staff + admin (13_row_level_security.sql).
+--     persistProcurementToSupabase skips that table for other roles so one forbidden upsert does not abort budgets, POs, etc.
+--   • When both VITE_* variables are set, ProcurementProvider loads all operational tables
+--     in one round-trip (loadProcurementFromSupabase), then on each user action applies the
+--     change in memory and runs persistProcurementToSupabase (serialized so writes do not overlap).
+--   • Tables touched by sync (order varies): app_settings, suppliers, inventory_lines,
+--     purchase_requests, quotations, purchase_orders, deliveries, budget_requests, payments, audit_log.
+--   • After a successful cloud load, the browser clears the local procurement snapshot so Postgres
+--     stays the single source of truth.
+--
+-- If changes “don’t save” or the console shows TypeError: Failed to fetch
+--   • That is a network / client configuration issue, not missing SQL. Typical causes:
+--       – Embedded IDE browser blocking requests to *.supabase.co (test in Safari/Chrome).
+--       – Wrong, empty, or whitespace-only publishable key; URL typo; trailing-only URL edits.
+--       – Project paused; offline; VPN/firewall; local Supabase URL while `supabase start` is not running.
+--   • RLS or SQL errors usually return HTTP 4xx/5xx with a JSON message from PostgREST, not “Failed to fetch”.
+--   • The app shows a header banner when sync fails (Supabase mode); fix env/network first, then re-run actions.
+--
+-- Fresh install checklist
+--   • Run numbered SQL 01–17 for schema, RLS, and indexes; then 19_public_api_grants.sql (PostgREST privileges).
+--   • seed/demo_accounts.sql — required for hosted sign-in: creates auth.users + public.profiles (RLS uses profiles.role).
+--     Without a profile row for your auth user id, the app cannot resolve role / inventory RLS and sync may fail.
+--   • seed/demo_procurement_data.sql — optional minimal bootstrap (one supplier + app_settings); truncates operational tables.
+--   • Optional: 20_rls_session_notes.sql — documents JWT + authenticated role vs anon.
+--   • Run 18 only if you want this SELECT in the editor.
+
+SELECT 1 AS app_supabase_connectivity_notes_ok;
+
+-- ===== 19_public_api_grants.sql =====
+-- 19_public_api_grants.sql — table privileges for Supabase PostgREST (anon + authenticated).
+-- Without these, the browser can get "permission denied for table …" even when RLS policies allow the row.
+-- Run after creating tables (01–12) and before or after RLS (13). Safe to re-run.
+--
+-- RLS still enforces row access; GRANT only allows the role to attempt the statement.
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+  public.profiles,
+  public.app_settings,
+  public.suppliers,
+  public.purchase_requests,
+  public.quotations,
+  public.purchase_orders,
+  public.deliveries,
+  public.inventory_lines,
+  public.budget_requests,
+  public.payments,
+  public.audit_log
+TO anon, authenticated;
+
+-- Tables created later in the same session (e.g. new migrations) still need grants; this helps new objects:
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
+
+-- ===== 20_rls_session_notes.sql =====
+-- 20_rls_session_notes.sql — documentation only (harmless SELECT).
+-- Aligns with: src/auth/auth-store.ts (whenCloudAuthHydrated), src/procurement/supabase/sync.ts,
+--             supabase/sql/13_row_level_security.sql (policies TO authenticated).
+--
+-- PostgREST + anon key:
+--   • Unauthenticated requests use DB role `anon`. Your RLS policies target `TO authenticated`,
+--     so without a row grant + policy match, reads return no rows and writes fail.
+--   • After signInWithPassword, the Supabase client attaches Authorization: Bearer <access_token>
+--     so Postgres runs as `authenticated` and auth.uid() is set from the JWT.
+--
+-- App behaviour:
+--   • The SPA waits for the first auth.getSession() refresh before protected routes and before
+--     bulk procurement load/save so RLS does not run as anon by accident on a cold refresh.
+
+SELECT 1 AS rls_session_notes_ok;
+
+-- ===== seed/demo_procurement_data.sql =====
+-- seed/demo_procurement_data.sql — minimal operational bootstrap (no mock PO/PR/catalog bulk).
+-- Run after core schema (01–17) and public.profiles + RLS (02, 13). Safe to re-run: truncates operational tables only.
+-- Demo Auth users stay in seed/demo_accounts.sql (run separately; not truncated here).
+--
+-- Inserts: app_settings row + exactly one supplier. All other operational tables empty.
 
 BEGIN;
 
@@ -732,14 +870,10 @@ CASCADE;
 INSERT INTO public.app_settings (id, company_name, system_notes, last_override_note)
 VALUES (
   1,
-  'Chic Bowl by 3rd Jen Kitchens',
-  'Access — New accounts are created only in Admin → User management (email + initial password). There is no public self-service registration; visiting /register redirects to Sign in.
-Demo sign-in — Hosted: run seed/demo_accounts.sql after schema (creates auth.users + identities + profiles; passwords match src/auth/seed-users.ts). The /login page is email + password only (no on-screen credential list).
-Data — When using Supabase, operational data lives in Postgres; configure RLS for your environment.
-Currency — Amounts display with consistent formatting across workspaces.
-Stock catalog — Fixed master list in inventory_lines; low-stock alerts use reorder_threshold.
-Workflow — Manager approves purchase requests only (no reject). Finance approves POs. Purchasing revises POs returned by Finance.
-Reports — Admin executive snapshot: /admin/reports (PO book, suppliers, audit peek, governance tiles).
+  'Procurement Hub',
+  'Data — Signed-in users read/write procurement tables in Postgres via the app (RLS + authenticated role).
+Users — Create Auth users + public.profiles with seed/demo_accounts.sql or Admin → User management.
+Env — The SPA needs VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY; restart the dev server after changing .env.local.
 ',
   ''
 )
@@ -750,63 +884,7 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 INSERT INTO public.suppliers (id, name, contact, email, phone, pricing_notes, reliability, active) VALUES
-  ('seed-supplier-1', 'Fresh Valley Poultry', 'Sam Rivera', 'orders@freshvalley.example', '+63 917 555 0101', 'Whole chicken tier pricing; weekly index.', 4, true),
-  ('seed-supplier-2', 'PackRight Supplies', 'Jordan Lee', 'sales@packright.example', '+63 917 555 0102', 'Biodegradable trays — MOQ 500.', 5, true);
-
-INSERT INTO public.purchase_requests (id, category, description, request_reason, quantity, unit, status, requested_by_email, created_at, reviewed_at, review_note) VALUES
-  ('seed-pr-pending', 'chicken', 'Chicken breast — weekly production', 'Forecasted demand for grill line; current stock below reorder threshold.', 120, 'kg', 'pending', 'inventorystaff@gmail.com', '2026-04-18T12:00:00.000Z', NULL, NULL),
-  ('seed-pr-approved', 'packaging', 'Paper bowls — retail line', 'Low stock alert from catalog; need buffer before weekend rush.', 800, 'units', 'approved', 'inventorystaff@gmail.com', '2026-04-18T12:00:00.000Z', '2026-04-18T12:00:00.000Z', 'Approved for sourcing.');
-
-INSERT INTO public.quotations (id, supplier_id, title, price, quality_note, delivery_terms, created_at) VALUES
-  ('seed-qt-1', 'seed-supplier-2', 'Eco trays RFQ', 1840, 'Food-grade certified; samples on file.', 'FOB hub; 5 business days', '2026-04-18T12:00:00.000Z'),
-  ('seed-qt-2', 'seed-supplier-1', 'Alternate tray quote', 2100, 'Heavier gauge', '2-week lead', '2026-04-18T12:00:00.000Z');
-
-INSERT INTO public.purchase_orders (id, purchase_request_id, supplier_id, items_summary, total, status, created_at, sent_at, shipped_at, completed_at, manager_note, finance_note, inventory_catalog_id) VALUES
-  ('seed-po-draft', 'seed-pr-approved', 'seed-supplier-2', 'Paper bowls × 800', 1840, 'draft', '2026-04-18T12:00:00.000Z', NULL, NULL, NULL, NULL, NULL, NULL);
-
-INSERT INTO public.inventory_lines (id, name, category, quantity, unit, last_updated, reorder_threshold, source_delivery_id) VALUES
-  ('cat-chicken-breast', 'Chicken breast', 'chicken', 80, 'kg', '2026-04-18T12:00:00.000Z', 25, NULL),
-  ('cat-flour', 'Flour', 'ingredients', 120, 'kg', '2026-04-18T12:00:00.000Z', 30, NULL),
-  ('cat-cornstarch', 'Cornstarch', 'ingredients', 40, 'kg', '2026-04-18T12:00:00.000Z', 15, NULL),
-  ('cat-fish-sauce', 'Fish sauce', 'ingredients', 24, 'L', '2026-04-18T12:00:00.000Z', 8, NULL),
-  ('cat-oil', 'Cooking oil', 'ingredients', 60, 'L', '2026-04-18T12:00:00.000Z', 20, NULL),
-  ('cat-pepper', 'Pepper', 'ingredients', 5, 'kg', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-soda', 'Soda (club / baking)', 'ingredients', 10, 'kg', '2026-04-18T12:00:00.000Z', 4, NULL),
-  ('cat-nata', 'Nata de coco', 'ingredients', 15, 'kg', '2026-04-18T12:00:00.000Z', 5, NULL),
-  ('cat-rice', 'Rice', 'ingredients', 200, 'kg', '2026-04-18T12:00:00.000Z', 50, NULL),
-  ('cat-breadcrumbs', 'Breadcrumbs', 'ingredients', 25, 'kg', '2026-04-18T12:00:00.000Z', 10, NULL),
-  ('cat-honey-butter', 'Honey butter sauce', 'ingredients', 8, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-teriyaki', 'Teriyaki sauce', 'ingredients', 10, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-buffalo', 'Buffalo sauce', 'ingredients', 10, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-soygarlic', 'Soy garlic sauce', 'ingredients', 10, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-sweet-chili', 'Sweet chili sauce', 'ingredients', 10, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-barbeque', 'Barbecue sauce', 'ingredients', 10, 'L', '2026-04-18T12:00:00.000Z', 3, NULL),
-  ('cat-parsley', 'Parsley', 'ingredients', 3, 'kg', '2026-04-18T12:00:00.000Z', 1, NULL),
-  ('cat-green-apple', 'Green apple syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-lychee', 'Lychee syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-blueberry', 'Blueberry syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-strawberry', 'Strawberry syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-mango', 'Mango syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-lemon', 'Lemon syrup', 'beverages', 6, 'L', '2026-04-18T12:00:00.000Z', 2, NULL),
-  ('cat-yakult', 'Yakult', 'beverages', 200, 'bottles', '2026-04-18T12:00:00.000Z', 48, NULL),
-  ('cat-gloves', 'Disposable gloves', 'packaging', 40, 'boxes', '2026-04-18T12:00:00.000Z', 10, NULL),
-  ('cat-plastic-wrap', 'Plastic wrap', 'packaging', 12, 'rolls', '2026-04-18T12:00:00.000Z', 4, NULL),
-  ('cat-paper-bowl', 'Paper bowl', 'packaging', 2000, 'units', '2026-04-18T12:00:00.000Z', 400, NULL),
-  ('cat-cup-12oz', '12 oz plastic cup', 'packaging', 3000, 'units', '2026-04-18T12:00:00.000Z', 600, NULL),
-  ('cat-cup-16oz', '16 oz plastic cup', 'packaging', 2500, 'units', '2026-04-18T12:00:00.000Z', 500, NULL),
-  ('cat-cup-22oz', '22 oz plastic cup', 'packaging', 2000, 'units', '2026-04-18T12:00:00.000Z', 400, NULL),
-  ('cat-straw', 'Straws', 'packaging', 10000, 'units', '2026-04-18T12:00:00.000Z', 2000, NULL),
-  ('cat-tape', 'Packaging tape', 'packaging', 24, 'rolls', '2026-04-18T12:00:00.000Z', 6, NULL),
-  ('cat-gas', 'LPG / cooking gas', 'equipment', 4, 'tanks', '2026-04-18T12:00:00.000Z', 1, NULL);
-
-INSERT INTO public.budget_requests (id, title, amount, purchase_request_id, status, notes, created_at, reviewed_at) VALUES
-  ('seed-budget-1', 'Q2 packaging envelope', 25000, 'seed-pr-approved', 'pending', 'Rolling commitment for retail packaging.', '2026-04-18T12:00:00.000Z', NULL);
-
-INSERT INTO public.payments (id, supplier_id, purchase_order_id, amount, status, reference, hold_reason, created_at, paid_at) VALUES
-  ('seed-pay-1', 'seed-supplier-1', NULL, 4200, 'pending', 'INV-FV-1044', NULL, '2026-04-18T12:00:00.000Z', NULL);
-
-INSERT INTO public.audit_log (id, at, actor_email, action, detail) VALUES
-  ('seed-audit-1', '2026-04-18T12:00:00.000Z', 'system@seed', 'Seed', 'Demo procurement dataset loaded.');
+  ('bootstrap-supplier-1', 'Primary supplier (edit or replace)', '', '', '', '', 3, true);
 
 COMMIT;
 

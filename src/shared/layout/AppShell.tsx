@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { canAccessWorkspace, defaultDashboardPath } from '@/auth/role-access'
+import { useProcurement } from '@/procurement/ProcurementProvider'
 import { BrandLogo } from '@/shared/components/BrandLogo'
 import { getRoleLabel, roles } from '@/shared/roles/registry'
 import { uiBtnSecondary } from '@/shared/ui/button'
@@ -24,6 +25,7 @@ function HeaderLogoLink({ homeTo }: { homeTo: string }) {
 
 export function AppShell() {
   const { user, logout } = useAuth()
+  const { procurementSyncError, dismissProcurementSyncError } = useProcurement()
   if (!user) {
     return null
   }
@@ -112,6 +114,23 @@ export function AppShell() {
           ) : null}
         </div>
       </header>
+      {procurementSyncError ? (
+        <div
+          role="alert"
+          className="border-b border-danger/40 bg-danger-muted/90 px-3 py-2 text-sm text-ink sm:px-4"
+        >
+          <div className="layout-shell flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 leading-snug">{procurementSyncError}</p>
+            <button
+              type="button"
+              onClick={() => dismissProcurementSyncError()}
+              className={`${uiBtnSecondary} shrink-0 self-start text-xs sm:self-center`}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="w-full pb-6 pt-3 sm:pb-10 sm:pt-5 lg:pb-12 lg:pt-6">
         <Outlet />
       </div>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '@/auth/useAuth'
-import { RoleWorkspaceHint } from '@/roles/admin/user-management/RoleWorkspaceHint'
+import { RoleWorkspaceHint } from './RoleWorkspaceHint'
 import { roles } from '@/shared/roles/registry'
 import type { RoleId } from '@/shared/types/nav'
 import type { SessionUser } from '@/auth/types'
@@ -12,23 +12,20 @@ type UserEditDialogProps = {
 }
 
 export function UserEditDialog({ account, onClose }: UserEditDialogProps) {
-  const { updateUser, usesSupabase } = useAuth()
+  const { updateUser } = useAuth()
   const [displayName, setDisplayName] = useState(account.displayName)
   const [email, setEmail] = useState(account.email)
   const [role, setRole] = useState<RoleId>(account.role)
-  const [newPassword, setNewPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
-    const pwd = newPassword.trim()
     const result = await updateUser({
       userId: account.id,
       displayName,
       email,
       role,
-      newPassword: pwd === '' ? undefined : pwd,
     })
     if (!result.ok) {
       setError(result.error)
@@ -54,9 +51,8 @@ export function UserEditDialog({ account, onClose }: UserEditDialogProps) {
           Edit user
         </h2>
         <p className="mt-1 text-sm text-ink-muted">
-          {usesSupabase
-            ? 'Update display name and workspace role. Sign-in email and passwords are managed in Supabase Auth.'
-            : 'Update profile, login email, role (any of the five system roles), or set a new password. Leave password blank to keep the current one.'}
+          Update display name and workspace role. Sign-in email and passwords are managed in Supabase
+          Auth.
         </p>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-1.5">
@@ -79,7 +75,7 @@ export function UserEditDialog({ account, onClose }: UserEditDialogProps) {
               id="edit-email"
               type="email"
               required
-              readOnly={usesSupabase}
+              readOnly
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none ring-accent/30 focus:border-accent focus:ring-2 read-only:bg-surface-muted/50"
@@ -105,22 +101,6 @@ export function UserEditDialog({ account, onClose }: UserEditDialogProps) {
           <div className="max-h-[min(50vh,22rem)] overflow-y-auto pr-1">
             <RoleWorkspaceHint role={role} variant="edit" />
           </div>
-          {usesSupabase ? null : (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-ink-muted" htmlFor="edit-password">
-                New password (optional)
-              </label>
-              <input
-                id="edit-password"
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Leave blank to keep current"
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none ring-accent/30 focus:border-accent focus:ring-2"
-              />
-            </div>
-          )}
           {error ? (
             <p className="rounded-lg border border-danger/20 bg-danger-muted px-3 py-2 text-sm text-danger-ink">
               {error}

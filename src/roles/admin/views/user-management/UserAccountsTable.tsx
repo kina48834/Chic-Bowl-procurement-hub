@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { getRoleLabel, roles } from '@/shared/roles/registry'
-import { UserEditDialog } from '@/roles/admin/user-management/UserEditDialog'
+import { UserEditDialog } from './UserEditDialog'
 import type { SessionUser } from '@/auth/types'
 import { uiBtnDangerSoft, uiBtnSecondary, uiBtnXs } from '@/shared/ui/button'
 
 function sourceLabel(source: 'seed' | 'registration' | 'provisioned') {
-  if (source === 'seed') return 'Seeded demo'
+  if (source === 'seed') return 'Bootstrap (SQL seed)'
   if (source === 'provisioned') return 'Admin provisioned'
   return 'Self-registration'
 }
 
 export function UserAccountsTable() {
-  const { accounts, user, removeUser, usesSupabase } = useAuth()
+  const { accounts } = useAuth()
   const [editing, setEditing] = useState<SessionUser | null>(null)
   const [editNonce, setEditNonce] = useState(0)
   const sorted = [...accounts].sort((a, b) => a.email.localeCompare(b.email))
@@ -67,22 +67,9 @@ export function UserAccountsTable() {
                     </button>
                     <button
                       type="button"
-                      disabled={account.id === user?.id || usesSupabase}
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Delete ${account.email}? This cannot be undone in this demo.`,
-                          )
-                        ) {
-                          return
-                        }
-                        void removeUser(account.id).then((result) => {
-                          if (!result.ok) {
-                            window.alert(result.error)
-                          }
-                        })
-                      }}
-                      className={`${uiBtnDangerSoft} ${uiBtnXs}`}
+                      disabled
+                      title="Remove accounts in Supabase → Authentication"
+                      className={`${uiBtnDangerSoft} ${uiBtnXs} opacity-50`}
                     >
                       Delete
                     </button>
@@ -93,9 +80,9 @@ export function UserAccountsTable() {
           </tbody>
         </table>
         <p className="border-t border-border px-4 py-3 text-xs leading-relaxed text-ink-muted">
-          {usesSupabase
-            ? 'Add user creates a Supabase Auth account and a profiles row with the selected role. Edit updates display name and role in Postgres. Delete is disabled—remove users in the Supabase Dashboard if needed.'
-            : `Add creates a new account. Edit changes name, email, any of the ${roles.length} roles, or password. Delete removes a user (you cannot delete yourself or the last ${getRoleLabel('admin')}). At least one admin must always exist.`}
+          Add user creates a Supabase Auth account and a <code className="text-ink">profiles</code> row.
+          Edit updates display name and role in Postgres. Delete is disabled here—remove users in
+          Supabase → Authentication if needed.
         </p>
       </div>
     </>

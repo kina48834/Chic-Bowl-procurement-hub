@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 INSERT INTO public.app_settings (id, company_name, system_notes, last_override_note)
 VALUES (
   1,
-  'Chic Bowl by 3rd Jen Kitchens',
+  'Procurement Hub',
   '',
   ''
 )

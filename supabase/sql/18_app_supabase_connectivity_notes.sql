@@ -1,0 +1,38 @@
+-- 18_app_supabase_connectivity_notes.sql — documentation only (no DDL).
+-- Aligns with: src/lib/supabaseClient.ts, src/procurement/supabase/sync.ts,
+--             src/procurement/ProcurementProvider.tsx, supabase/sql/13_row_level_security.sql
+--
+-- How the browser talks to this schema
+--   • The Vite SPA never opens a raw Postgres connection. It uses the Supabase REST API
+--     (PostgREST) with the project URL + publishable (anon) key from the environment.
+--   • Required env (see .env.example): VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY
+--     (trimmed in the app; URL should be https://<ref>.supabase.co or local http://127.0.0.1:54321).
+--
+-- How procurement data is written
+--   • inventory_lines: RLS allows mutations only for inventory-staff + admin (13_row_level_security.sql).
+--     persistProcurementToSupabase skips that table for other roles so one forbidden upsert does not abort budgets, POs, etc.
+--   • When both VITE_* variables are set, ProcurementProvider loads all operational tables
+--     in one round-trip (loadProcurementFromSupabase), then on each user action applies the
+--     change in memory and runs persistProcurementToSupabase (serialized so writes do not overlap).
+--   • Tables touched by sync (order varies): app_settings, suppliers, inventory_lines,
+--     purchase_requests, quotations, purchase_orders, deliveries, budget_requests, payments, audit_log.
+--   • After a successful cloud load, the browser clears the local procurement snapshot so Postgres
+--     stays the single source of truth.
+--
+-- If changes “don’t save” or the console shows TypeError: Failed to fetch
+--   • That is a network / client configuration issue, not missing SQL. Typical causes:
+--       – Embedded IDE browser blocking requests to *.supabase.co (test in Safari/Chrome).
+--       – Wrong, empty, or whitespace-only publishable key; URL typo; trailing-only URL edits.
+--       – Project paused; offline; VPN/firewall; local Supabase URL while `supabase start` is not running.
+--   • RLS or SQL errors usually return HTTP 4xx/5xx with a JSON message from PostgREST, not “Failed to fetch”.
+--   • The app shows a header banner when sync fails (Supabase mode); fix env/network first, then re-run actions.
+--
+-- Fresh install checklist
+--   • Run numbered SQL 01–17 for schema, RLS, and indexes; then 19_public_api_grants.sql (PostgREST privileges).
+--   • seed/demo_accounts.sql — required for hosted sign-in: creates auth.users + public.profiles (RLS uses profiles.role).
+--     Without a profile row for your auth user id, the app cannot resolve role / inventory RLS and sync may fail.
+--   • seed/demo_procurement_data.sql — optional minimal bootstrap (one supplier + app_settings); truncates operational tables.
+--   • Optional: 20_rls_session_notes.sql — documents JWT + authenticated role vs anon.
+--   • Run 18 only if you want this SELECT in the editor.
+
+SELECT 1 AS app_supabase_connectivity_notes_ok;
