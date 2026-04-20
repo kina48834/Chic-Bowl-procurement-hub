@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { uiBtnPrimary } from '@/shared/ui/button'
 
@@ -57,7 +56,6 @@ export function QuotationsPage() {
           Record RFQ responses and compare price, quality notes, and delivery terms side by side.
         </p>
       </header>
-      <ProcessGuide guideId="pur-quotations" />
       <section className="ui-panel p-6">
         <h2 className="text-sm font-semibold text-ink">Add quotation</h2>
         <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={handleAdd}>

@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { uiBtnPrimary, uiBtnSecondary } from '@/shared/ui/button'
 
 const input =
@@ -34,7 +33,6 @@ export function SystemSettingsPage() {
           Edits are saved to the audit log.
         </p>
       </header>
-      <ProcessGuide guideId="adm-settings" />
       <form onSubmit={handleSave} className="space-y-4 rounded-xl border border-border bg-surface-card p-5 shadow-sm">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-ink-muted" htmlFor="co">

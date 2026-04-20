@@ -109,9 +109,9 @@ function LandingPage() {
                 Chic Bowl procurement hub
               </h1>
               <p className="mx-auto mt-5 max-w-2xl text-pretty text-sm leading-relaxed text-ink-muted sm:text-base lg:text-lg">
-                One guided workspace for inventory, purchasing, management, finance, and administration.
-                Follow the flow from kitchen demand to supplier payment—each role sees only what they need,
-                with embedded process guides on every screen. Sign in to pick up where your team left off.
+                One workspace for inventory, purchasing, management, finance, and administration.
+                Follow the flow from kitchen demand to supplier payment—each role sees only what they need.
+                Sign in to pick up where your team left off.
               </p>
               <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Link

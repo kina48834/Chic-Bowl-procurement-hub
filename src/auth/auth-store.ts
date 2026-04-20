@@ -127,8 +127,9 @@ export async function authLogin(
   if (!supabase) {
     return { ok: false, error: 'Supabase client is not available.' }
   }
+  const emailNorm = email.trim().toLowerCase()
   const { error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
+    email: emailNorm,
     password,
   })
   if (error) {
@@ -137,17 +138,15 @@ export async function authLogin(
     if (code === 'email_not_confirmed' || /email not confirmed|confirm your email/i.test(msg)) {
       return {
         ok: false,
-        error: `${msg} Open Authentication → Users, open this user, and confirm the email (⋯ / Confirm). Turning off “Confirm email” under Providers → Email only affects new sign-ups—it does not retroactively confirm accounts that were already created unconfirmed.`,
+        error:
+          'Confirm your email address before signing in. Check your inbox or ask your administrator for help.',
       }
     }
     const invalid =
       /invalid login credentials/i.test(msg) ||
       msg.toLowerCase().includes('invalid login')
     if (invalid) {
-      return {
-        ok: false,
-        error: `${msg} For demo emails: add each user in Supabase Authentication (passwords on the Sign in page), then run supabase/sql/seed/demo_accounts.sql.`,
-      }
+      return { ok: false, error: 'Invalid email or password.' }
     }
     return { ok: false, error: msg }
   }
@@ -155,8 +154,7 @@ export async function authLogin(
   if (!cloudSessionUser) {
     return {
       ok: false,
-      error:
-        'No profile for this account. Apply supabase/sql (schema + trigger) and seed demo_accounts after creating Auth users.',
+      error: 'Sign-in failed. Your account may not be fully set up—contact your administrator.',
     }
   }
   return { ok: true, user: cloudSessionUser }

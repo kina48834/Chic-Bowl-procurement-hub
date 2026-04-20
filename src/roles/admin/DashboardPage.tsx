@@ -6,8 +6,6 @@ import {
   RoleDashboardGrid,
   RoleDashboardHeader,
 } from '@/shared/components/role-dashboard'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
-
 export function AdminDashboardPage() {
   const { accounts } = useAuth()
 
@@ -15,9 +13,8 @@ export function AdminDashboardPage() {
     <div className="space-y-10">
       <RoleDashboardHeader
         title="Administration"
-        subtitle="Keep identities, configuration, and observability aligned across every procurement role."
+        subtitle="Users, system settings, catalog, suppliers, reports, and audit log."
       />
-      <ProcessGuide guideId="adm-dashboard" />
       <section className="rounded-2xl border border-border bg-surface-card p-6 shadow-sm">
         <h2 className="text-sm font-semibold text-ink">Accounts by role</h2>
         <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -47,32 +44,32 @@ export function AdminDashboardPage() {
         <RoleDashboardCard
           to="user-management"
           title="User management"
-          description="Provision accounts and assign any workspace role, including admin."
+          description="Create accounts and assign roles."
         />
         <RoleDashboardCard
           to="settings"
           title="System settings"
-          description="Company name, system notes, and override log."
+          description="Company profile and system notes."
         />
         <RoleDashboardCard
           to="inventory"
           title="Stock catalog"
-          description="Master SKUs and reorder levels—same data as Manager, with admin shortcuts."
+          description="Shared catalog and reorder thresholds."
         />
         <RoleDashboardCard
           to="suppliers"
           title="Suppliers"
-          description="Full supplier master access for break-glass support."
+          description="Supplier master data."
         />
         <RoleDashboardCard
           to="reports"
           title="Reports"
-          description="Cross-cutting analytics without role filters."
+          description="Executive and operational summaries."
         />
         <RoleDashboardCard
           to="audit-log"
           title="Audit log"
-          description="Immutable history for security and compliance reviews."
+          description="Change history by actor and time."
         />
       </RoleDashboardGrid>
     </div>

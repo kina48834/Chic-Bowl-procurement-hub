@@ -13,13 +13,7 @@ export const managerNav: NavItem[] = [
     path: 'approvals/requests',
     label: 'Approve requests',
     description:
-      'Approval workflow: approve or reject purchase requests before sourcing.',
-  },
-  {
-    path: 'approvals/orders',
-    label: 'Approve purchase orders',
-    description:
-      'Approval workflow: approve or reject purchase orders before they are sent.',
+      'Approve purchase requests from Inventory so Purchasing can source (no reject action in this workflow).',
   },
   {
     path: 'reports',
@@ -32,12 +26,6 @@ export const managerNav: NavItem[] = [
     label: 'Order monitoring',
     description:
       'Order monitoring: view all orders and statuses (read-only in this workspace).',
-  },
-  {
-    path: 'inventory',
-    label: 'Stock catalog',
-    description:
-      'Add, edit, or remove master stock items—linked to purchase orders and tracking for all roles.',
   },
   {
     path: 'profile',

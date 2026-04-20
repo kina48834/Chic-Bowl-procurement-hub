@@ -34,7 +34,7 @@
 -- after the accounts list refreshes (public.profiles is the source for roles in the app).
 --
 -- Related SPA routes (hosted + local): /admin/user-management (provision), /admin/inventory and
--- /manager/inventory (shared stock catalog → inventory_lines), /admin/reports (cross-cutting KPIs).
+-- /inventory/catalog (shared stock catalog → inventory_lines), /admin/reports (cross-cutting KPIs).
 --
 -- Passwords:
 --   • public.profiles has no password column; credentials are stored only in auth.users (GoTrue).

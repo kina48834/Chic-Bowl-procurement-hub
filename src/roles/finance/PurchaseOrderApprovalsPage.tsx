@@ -2,14 +2,13 @@ import { useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { uiBtnDangerSoft, uiBtnSuccess } from '@/shared/ui/button'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 
 const input =
   'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none ring-accent/30 focus:border-accent focus:ring-2'
 
-export function PurchaseOrderApprovalsPage() {
+export function FinancePurchaseOrderApprovalsPage() {
   const { user } = useAuth()
   const { state, reviewPurchaseOrder } = useProcurement()
   const actor = user?.email ?? 'unknown'
@@ -20,15 +19,15 @@ export function PurchaseOrderApprovalsPage() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold text-ink">Purchase order approvals</h1>
+        <h1 className="text-2xl font-semibold text-ink">Purchase order approval (Finance)</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Confirm commercial terms before purchasing sends the PO to the supplier.
+          Approve commitment to the supplier, or return the PO to Purchasing with a clear reason.
+          Returned POs can be edited and resubmitted for another Finance review.
         </p>
       </header>
-      <ProcessGuide guideId="mgr-approve-orders" />
       {pending.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-sm text-ink-muted">
-          No POs awaiting approval.
+          No purchase orders are waiting for Finance approval.
         </p>
       ) : (
         <ul className="space-y-4">
@@ -37,6 +36,7 @@ export function PurchaseOrderApprovalsPage() {
             const cat = po.inventoryCatalogId
               ? state.inventory.find((i) => i.id === po.inventoryCatalogId)
               : undefined
+            const pr = state.purchaseRequests.find((r) => r.id === po.purchaseRequestId)
             return (
               <li key={po.id} className="ui-panel-soft p-5">
                 <div className="flex flex-wrap justify-between gap-2">
@@ -47,6 +47,11 @@ export function PurchaseOrderApprovalsPage() {
                         Stock catalog: <span className="font-medium text-ink">{cat.name}</span>
                       </p>
                     ) : null}
+                    {pr?.requestReason ? (
+                      <p className="mt-1 text-xs text-ink-muted">
+                        Request reason: <span className="text-ink">{pr.requestReason}</span>
+                      </p>
+                    ) : null}
                     <p className="text-sm text-ink-muted">
                       {sup?.name} · {formatPhp(po.total)}
                     </p>
@@ -54,13 +59,14 @@ export function PurchaseOrderApprovalsPage() {
                   <StatusBadge status={po.status} />
                 </div>
                 <div className="mt-3 space-y-2">
-                  <label className="text-xs text-ink-muted">Note</label>
+                  <label className="text-xs text-ink-muted">Note for audit / Purchasing</label>
                   <input
                     className={input}
                     value={noteById[po.id] ?? ''}
                     onChange={(e) =>
                       setNoteById((m) => ({ ...m, [po.id]: e.target.value }))
                     }
+                    placeholder="Approval comment or return reason"
                   />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -77,10 +83,15 @@ export function PurchaseOrderApprovalsPage() {
                     type="button"
                     className={uiBtnDangerSoft}
                     onClick={() =>
-                      reviewPurchaseOrder(po.id, 'rejected', noteById[po.id] ?? '', actor)
+                      reviewPurchaseOrder(
+                        po.id,
+                        'returned_by_finance',
+                        noteById[po.id] ?? '',
+                        actor,
+                      )
                     }
                   >
-                    Reject PO
+                    Return to Purchasing
                   </button>
                 </div>
               </li>

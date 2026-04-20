@@ -11,10 +11,12 @@ import { useAuth } from '@/auth/useAuth'
 import type {
   BudgetStatus,
   DeliveryStatus,
+  InventoryLine,
+  Payment,
   PRCategory,
   POStatus,
   ProcurementState,
-  PRStatus,
+  PurchaseOrder,
 } from '@/procurement/types'
 import {
   emptyProcurementState,
@@ -54,23 +56,85 @@ function commit(next: ProcurementState) {
   return next
 }
 
+function holdPayablesForPO(payments: Payment[], poId: string, reason: string): Payment[] {
+  return payments.map((p) =>
+    p.purchaseOrderId === poId && p.status === 'pending'
+      ? { ...p, status: 'on_hold' as const, holdReason: reason }
+      : p,
+  )
+}
+
+function upsertPayableAfterReceipt(
+  payments: Payment[],
+  po: PurchaseOrder,
+  payableAmount: number,
+  reference: string,
+): Payment[] {
+  const idx = payments.findIndex(
+    (p) => p.purchaseOrderId === po.id && (p.status === 'pending' || p.status === 'on_hold'),
+  )
+  const row: Payment = {
+    id: idx === -1 ? crypto.randomUUID() : payments[idx].id,
+    supplierId: po.supplierId,
+    purchaseOrderId: po.id,
+    amount: Math.max(0, payableAmount),
+    status: 'pending',
+    reference,
+    createdAt: idx === -1 ? new Date().toISOString() : payments[idx].createdAt,
+    holdReason: undefined,
+  }
+  if (idx === -1) return [...payments, row]
+  const next = [...payments]
+  next[idx] = row
+  return next
+}
+
+function bumpInventoryReceived(
+  inventory: InventoryLine[],
+  po: PurchaseOrder,
+  linkedRequestCategory: string | undefined,
+  acceptedQty: number,
+  deliveryId: string,
+): InventoryLine[] {
+  if (acceptedQty <= 0) return inventory
+  if (po.inventoryCatalogId) {
+    return inventory.map((row) =>
+      row.id === po.inventoryCatalogId
+        ? {
+            ...row,
+            quantity: row.quantity + acceptedQty,
+            lastUpdated: new Date().toISOString(),
+          }
+        : row,
+    )
+  }
+  const invLine: InventoryLine = {
+    id: crypto.randomUUID(),
+    name: po.itemsSummary.slice(0, 80),
+    category: linkedRequestCategory || 'other',
+    quantity: acceptedQty,
+    unit: 'units',
+    lastUpdated: new Date().toISOString(),
+    reorderThreshold: 20,
+    sourceDeliveryId: deliveryId,
+  }
+  return [...inventory, invLine]
+}
+
 export type ProcurementContextValue = {
   state: ProcurementState
   createPurchaseRequest: (
     input: {
       category: PRCategory
       description: string
+      requestReason: string
       quantity: number
       unit: string
     },
     actorEmail: string,
   ) => void
-  reviewPurchaseRequest: (
-    id: string,
-    status: Extract<PRStatus, 'approved' | 'rejected'>,
-    note: string,
-    actorEmail: string,
-  ) => void
+  /** Manager approves only (no reject in this workflow). */
+  reviewPurchaseRequest: (id: string, note: string, actorEmail: string) => void
   addSupplier: (
     input: Omit<import('@/procurement/types').Supplier, 'id'>,
     actorEmail: string,
@@ -102,9 +166,17 @@ export type ProcurementContextValue = {
     actorEmail: string,
   ) => { ok: true } | { ok: false; error: string }
   submitPOForApproval: (id: string, actorEmail: string) => void
+  updatePurchaseOrderDraft: (
+    id: string,
+    patch: Partial<
+      Pick<PurchaseOrder, 'itemsSummary' | 'total' | 'supplierId' | 'inventoryCatalogId'>
+    >,
+    actorEmail: string,
+  ) => void
+  /** Finance approves or returns PO to Purchasing with a note. */
   reviewPurchaseOrder: (
     id: string,
-    status: Extract<POStatus, 'approved' | 'rejected'>,
+    status: Extract<POStatus, 'approved' | 'returned_by_finance'>,
     note: string,
     actorEmail: string,
   ) => void
@@ -112,9 +184,15 @@ export type ProcurementContextValue = {
   shipPurchaseOrder: (id: string, actorEmail: string) => void
   receiveDelivery: (
     deliveryId: string,
-    quantityReceived: number,
-    qualityNotes: string,
-    outcome: Extract<DeliveryStatus, 'accepted' | 'rejected'>,
+    input: {
+      quantityAccepted: number
+      quantityRejected: number
+      qualityNotes: string
+      outcome: Extract<DeliveryStatus, 'accepted' | 'rejected' | 'partially_accepted'>
+      rejectionItemName?: string
+      rejectionReason?: string
+      photoUrls?: string[]
+    },
     actorEmail: string,
   ) => void
   adjustInventoryQuantity: (
@@ -128,6 +206,7 @@ export type ProcurementContextValue = {
       category: string
       quantity: number
       unit: string
+      reorderThreshold?: number
     },
     actorEmail: string,
   ) => void
@@ -136,7 +215,7 @@ export type ProcurementContextValue = {
     patch: Partial<
       Pick<
         import('@/procurement/types').InventoryLine,
-        'name' | 'category' | 'quantity' | 'unit'
+        'name' | 'category' | 'quantity' | 'unit' | 'reorderThreshold'
       >
     >,
     actorEmail: string,
@@ -213,16 +292,20 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       input: {
         category: PRCategory
         description: string
+        requestReason: string
         quantity: number
         unit: string
       },
       actorEmail: string,
     ) => {
+      const reason = input.requestReason.trim()
+      if (!reason) return
       setState((prev) => {
         const pr = {
           id: crypto.randomUUID(),
           category: input.category,
           description: input.description,
+          requestReason: reason,
           quantity: input.quantity,
           unit: input.unit,
           status: 'pending' as const,
@@ -240,37 +323,30 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const reviewPurchaseRequest = useCallback(
-    (
-      id: string,
-      status: Extract<PRStatus, 'approved' | 'rejected'>,
-      note: string,
-      actorEmail: string,
-    ) => {
-      setState((prev) => {
-        const idx = prev.purchaseRequests.findIndex((p) => p.id === id)
-        if (idx === -1) return prev
-        const row = prev.purchaseRequests[idx]
-        const updated = {
-          ...row,
-          status,
-          reviewedAt: new Date().toISOString(),
-          reviewNote: note,
-        }
-        const purchaseRequests = [...prev.purchaseRequests]
-        purchaseRequests[idx] = updated
-        let next = { ...prev, purchaseRequests }
-        next = audit(
-          next,
-          actorEmail,
-          `PR ${status}`,
-          `${row.description}: ${note || '—'}`,
-        )
-        return commit(next)
-      })
-    },
-    [],
-  )
+  const reviewPurchaseRequest = useCallback((id: string, note: string, actorEmail: string) => {
+    setState((prev) => {
+      const idx = prev.purchaseRequests.findIndex((p) => p.id === id)
+      if (idx === -1) return prev
+      const row = prev.purchaseRequests[idx]
+      if (row.status !== 'pending') return prev
+      const updated = {
+        ...row,
+        status: 'approved' as const,
+        reviewedAt: new Date().toISOString(),
+        reviewNote: note,
+      }
+      const purchaseRequests = [...prev.purchaseRequests]
+      purchaseRequests[idx] = updated
+      let next = { ...prev, purchaseRequests }
+      next = audit(
+        next,
+        actorEmail,
+        'PR approved',
+        `${row.description}: ${note || '—'}`,
+      )
+      return commit(next)
+    })
+  }, [])
 
   const addSupplier = useCallback(
     (
@@ -399,20 +475,54 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
   const submitPOForApproval = useCallback((id: string, actorEmail: string) => {
     setState((prev) => {
       const pos = prev.purchaseOrders.map((p) =>
-        p.id === id && p.status === 'draft'
+        p.id === id && (p.status === 'draft' || p.status === 'returned_by_finance')
           ? { ...p, status: 'pending_approval' as const }
           : p,
       )
       let next = { ...prev, purchaseOrders: pos }
-      next = audit(next, actorEmail, 'PO submitted for approval', id)
+      next = audit(next, actorEmail, 'PO submitted for Finance approval', id)
       return commit(next)
     })
   }, [])
 
+  const updatePurchaseOrderDraft = useCallback(
+    (
+      id: string,
+      patch: Partial<
+        Pick<PurchaseOrder, 'itemsSummary' | 'total' | 'supplierId' | 'inventoryCatalogId'>
+      >,
+      actorEmail: string,
+    ) => {
+      setState((prev) => {
+        const po = prev.purchaseOrders.find((p) => p.id === id)
+        if (!po || (po.status !== 'draft' && po.status !== 'returned_by_finance')) return prev
+        const pos = prev.purchaseOrders.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                ...(patch.itemsSummary !== undefined
+                  ? { itemsSummary: patch.itemsSummary }
+                  : {}),
+                ...(patch.total !== undefined ? { total: patch.total } : {}),
+                ...(patch.supplierId !== undefined ? { supplierId: patch.supplierId } : {}),
+                ...(patch.inventoryCatalogId !== undefined
+                  ? { inventoryCatalogId: patch.inventoryCatalogId }
+                  : {}),
+              }
+            : p,
+        )
+        let next = { ...prev, purchaseOrders: pos }
+        next = audit(next, actorEmail, 'PO draft updated', id)
+        return commit(next)
+      })
+    },
+    [],
+  )
+
   const reviewPurchaseOrder = useCallback(
     (
       id: string,
-      status: Extract<POStatus, 'approved' | 'rejected'>,
+      status: Extract<POStatus, 'approved' | 'returned_by_finance'>,
       note: string,
       actorEmail: string,
     ) => {
@@ -422,12 +532,17 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
             ? {
                 ...p,
                 status,
-                managerNote: note,
+                financeNote: note,
               }
             : p,
         )
         let next = { ...prev, purchaseOrders: pos }
-        next = audit(next, actorEmail, `PO ${status}`, `${id}: ${note || '—'}`)
+        next = audit(
+          next,
+          actorEmail,
+          status === 'approved' ? 'PO approved by Finance' : 'PO returned by Finance',
+          `${id}: ${note || '—'}`,
+        )
         return commit(next)
       })
     },
@@ -469,6 +584,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         purchaseOrderId: id,
         quantityExpected: 1,
         quantityReceived: 0,
+        quantityRejected: 0,
         qualityNotes: '',
         status: 'pending' as const,
         createdAt: new Date().toISOString(),
@@ -486,9 +602,15 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
   const receiveDelivery = useCallback(
     (
       deliveryId: string,
-      quantityReceived: number,
-      qualityNotes: string,
-      outcome: Extract<DeliveryStatus, 'accepted' | 'rejected'>,
+      input: {
+        quantityAccepted: number
+        quantityRejected: number
+        qualityNotes: string
+        outcome: Extract<DeliveryStatus, 'accepted' | 'rejected' | 'partially_accepted'>
+        rejectionItemName?: string
+        rejectionReason?: string
+        photoUrls?: string[]
+      },
       actorEmail: string,
     ) => {
       setState((prev) => {
@@ -496,17 +618,53 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         if (dIdx === -1) return prev
         const d = prev.deliveries[dIdx]
         if (d.status !== 'pending') return prev
+        const po = prev.purchaseOrders.find((p) => p.id === d.purchaseOrderId)
+        if (!po || po.status !== 'shipped') return prev
+
+        const qa = Math.max(0, input.quantityAccepted)
+        const qr = Math.max(0, input.quantityRejected)
+        const { outcome } = input
+
+        if (outcome === 'accepted' && qr !== 0) return prev
+        if (outcome === 'rejected' && qa !== 0) return prev
+        if (outcome === 'partially_accepted' && (qa === 0 || qr === 0)) return prev
+
+        const linkedRequest = prev.purchaseRequests.find((r) => r.id === po.purchaseRequestId)
+
         const deliveries = [...prev.deliveries]
         deliveries[dIdx] = {
           ...d,
-          quantityReceived,
-          qualityNotes,
+          quantityReceived: qa,
+          quantityRejected: qr,
+          qualityNotes: input.qualityNotes,
           status: outcome,
+          rejectionItemName: input.rejectionItemName,
+          rejectionReason: input.rejectionReason,
+          photoUrls: input.photoUrls?.length ? input.photoUrls : undefined,
         }
+
         let next: ProcurementState = { ...prev, deliveries }
-        const po = prev.purchaseOrders.find((p) => p.id === d.purchaseOrderId)
-        if (outcome === 'accepted' && po) {
-          const pos = prev.purchaseOrders.map((p) =>
+        let purchaseOrders = prev.purchaseOrders
+        let inventory = prev.inventory
+        let payments = prev.payments
+
+        if (outcome === 'rejected') {
+          purchaseOrders = purchaseOrders.map((p) =>
+            p.id === po.id
+              ? {
+                  ...p,
+                  status: 'waiting_replacement' as const,
+                }
+              : p,
+          )
+          payments = holdPayablesForPO(
+            payments,
+            po.id,
+            'Delivery rejected or damaged — awaiting supplier replacement. Do not pay until resolved.',
+          )
+        } else if (outcome === 'accepted') {
+          if (qa <= 0) return prev
+          purchaseOrders = purchaseOrders.map((p) =>
             p.id === po.id
               ? {
                   ...p,
@@ -515,28 +673,43 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
                 }
               : p,
           )
-          const invName = po.itemsSummary.slice(0, 80)
-          const invLine = {
-            id: crypto.randomUUID(),
-            name: invName,
-            category: 'received',
-            quantity: quantityReceived || 1,
-            unit: 'units',
-            lastUpdated: new Date().toISOString(),
-            sourceDeliveryId: deliveryId,
-          }
-          next = {
-            ...next,
-            purchaseOrders: pos,
-            inventory: [...next.inventory, invLine],
-          }
+          inventory = bumpInventoryReceived(
+            inventory,
+            po,
+            linkedRequest?.category,
+            qa,
+            deliveryId,
+          )
+          payments = upsertPayableAfterReceipt(
+            payments,
+            po,
+            po.total,
+            `Payable · ${po.itemsSummary.slice(0, 40)}`,
+          )
+        } else if (outcome === 'partially_accepted') {
+          const totalUnits = qa + qr
+          const payable =
+            totalUnits > 0 ? Math.round((po.total * qa) / totalUnits * 100) / 100 : po.total
+          purchaseOrders = purchaseOrders.map((p) =>
+            p.id === po.id
+              ? {
+                  ...p,
+                  status: 'completed' as const,
+                  completedAt: new Date().toISOString(),
+                }
+              : p,
+          )
+          inventory = bumpInventoryReceived(inventory, po, linkedRequest?.category, qa, deliveryId)
+          payments = upsertPayableAfterReceipt(
+            payments,
+            po,
+            payable,
+            `Partial receipt · ${po.itemsSummary.slice(0, 32)}`,
+          )
         }
-        next = audit(
-          next,
-          actorEmail,
-          `Receiving ${outcome}`,
-          `Delivery ${deliveryId}`,
-        )
+
+        next = { ...next, purchaseOrders, inventory, payments }
+        next = audit(next, actorEmail, `Receiving ${outcome}`, `Delivery ${deliveryId}`)
         return commit(next)
       })
     },
@@ -565,17 +738,27 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
 
   const createInventoryLine = useCallback(
     (
-      input: { name: string; category: string; quantity: number; unit: string },
+      input: {
+        name: string
+        category: string
+        quantity: number
+        unit: string
+        reorderThreshold?: number
+      },
       actorEmail: string,
     ) => {
       setState((prev) => {
         const line = {
           id: crypto.randomUUID(),
           name: input.name.trim(),
-          category: (input.category.trim() || 'general').slice(0, 64),
+          category: (input.category.trim() || 'other').slice(0, 64),
           quantity: Math.max(0, input.quantity),
           unit: (input.unit.trim() || 'unit').slice(0, 32),
           lastUpdated: new Date().toISOString(),
+          reorderThreshold:
+            input.reorderThreshold != null && Number.isFinite(input.reorderThreshold)
+              ? Math.max(0, input.reorderThreshold)
+              : 20,
         }
         let next: ProcurementState = {
           ...prev,
@@ -594,7 +777,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       patch: Partial<
         Pick<
           import('@/procurement/types').InventoryLine,
-          'name' | 'category' | 'quantity' | 'unit'
+          'name' | 'category' | 'quantity' | 'unit' | 'reorderThreshold'
         >
       >,
       actorEmail: string,
@@ -614,6 +797,9 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
             : {}),
           ...(patch.unit !== undefined
             ? { unit: String(patch.unit).trim().slice(0, 32) }
+            : {}),
+          ...(patch.reorderThreshold !== undefined
+            ? { reorderThreshold: Math.max(0, Number(patch.reorderThreshold)) }
             : {}),
           lastUpdated: new Date().toISOString(),
         }
@@ -733,11 +919,12 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
   const markPaymentPaid = useCallback((id: string, actorEmail: string) => {
     setState((prev) => {
       const payments = prev.payments.map((p) =>
-        p.id === id
+        p.id === id && p.status === 'pending'
           ? {
               ...p,
               status: 'paid' as const,
               paidAt: new Date().toISOString(),
+              holdReason: undefined,
             }
           : p,
       )
@@ -789,6 +976,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       addQuotation,
       createPurchaseOrder,
       submitPOForApproval,
+      updatePurchaseOrderDraft,
       reviewPurchaseOrder,
       sendPurchaseOrder,
       shipPurchaseOrder,
@@ -814,6 +1002,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
       addQuotation,
       createPurchaseOrder,
       submitPOForApproval,
+      updatePurchaseOrderDraft,
       reviewPurchaseOrder,
       sendPurchaseOrder,
       shipPurchaseOrder,

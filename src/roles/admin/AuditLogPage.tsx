@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { uiBtnGhost, uiBtnSm } from '@/shared/ui/button'
 
 function actionChipClass(action: string): string {
@@ -99,8 +98,6 @@ export function AuditLogPage() {
           </p>
         </div>
       </section>
-
-      <ProcessGuide guideId="adm-audit-log" />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="ui-panel p-4 sm:p-5">

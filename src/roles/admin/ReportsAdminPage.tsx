@@ -2,7 +2,6 @@ import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { formatPhp } from '@/shared/format/money'
 import { roles } from '@/shared/roles/registry'
@@ -150,8 +149,6 @@ export function ReportsAdminPage() {
           System settings
         </Link>
       </nav>
-
-      <ProcessGuide guideId="adm-reports" />
 
       <section aria-label="Key metrics">
         <h2 className="sr-only">Key metrics</h2>

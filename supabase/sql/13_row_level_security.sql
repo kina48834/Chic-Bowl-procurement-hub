@@ -23,6 +23,24 @@ REVOKE ALL ON FUNCTION public.is_profile_admin() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_profile_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_profile_admin() TO service_role;
 
+CREATE OR REPLACE FUNCTION public.current_profile_role()
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+SET row_security = off
+AS $$
+  SELECT role::text
+  FROM public.profiles
+  WHERE id = auth.uid()
+  LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.current_profile_role() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_profile_role() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_profile_role() TO service_role;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
@@ -61,7 +79,8 @@ CREATE POLICY "profiles_update_own" ON public.profiles
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Demo / internal hub: allow any signed-in user full CRUD on operational tables.
+-- Demo / internal hub: allow any signed-in user full CRUD on operational tables
+-- except inventory_lines (mutations there are restricted to inventory-staff/admin below).
 DO $$
 DECLARE
   t text;
@@ -73,7 +92,6 @@ BEGIN
     'quotations',
     'purchase_orders',
     'deliveries',
-    'inventory_lines',
     'budget_requests',
     'payments',
     'audit_log'
@@ -87,6 +105,19 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON public.inventory_lines;
+DROP POLICY IF EXISTS "inventory_lines_select_authenticated" ON public.inventory_lines;
+DROP POLICY IF EXISTS "inventory_lines_mutate_inventory_staff_admin" ON public.inventory_lines;
+
+CREATE POLICY "inventory_lines_select_authenticated" ON public.inventory_lines
+  FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "inventory_lines_mutate_inventory_staff_admin" ON public.inventory_lines
+  FOR ALL TO authenticated
+  USING (public.current_profile_role() IN ('inventory-staff', 'admin'))
+  WITH CHECK (public.current_profile_role() IN ('inventory-staff', 'admin'));
 
 -- Admins: full profile visibility (is_profile_admin bypasses RLS on the inner read).
 CREATE POLICY "profiles_admin_select_all" ON public.profiles

@@ -1,19 +1,22 @@
-export type PRStatus = 'pending' | 'approved' | 'rejected'
+export type PRStatus = 'pending' | 'approved'
 
 export type POStatus =
   | 'draft'
   | 'pending_approval'
   | 'approved'
+  | 'returned_by_finance'
   | 'sent'
   | 'shipped'
+  | 'waiting_replacement'
   | 'completed'
+  /** Legacy / migration only */
   | 'rejected'
 
 export type BudgetStatus = 'pending' | 'approved' | 'denied'
 
-export type PaymentStatus = 'pending' | 'paid'
+export type PaymentStatus = 'pending' | 'paid' | 'on_hold'
 
-export type DeliveryStatus = 'pending' | 'accepted' | 'rejected'
+export type DeliveryStatus = 'pending' | 'accepted' | 'rejected' | 'partially_accepted'
 
 export type PRCategory =
   | 'chicken'
@@ -30,6 +33,8 @@ export type PurchaseRequest = {
   id: string
   category: PRCategory
   description: string
+  /** Why inventory needs this item (required for operational traceability). */
+  requestReason: string
   quantity: number
   unit: string
   status: PRStatus
@@ -71,8 +76,11 @@ export type PurchaseOrder = {
   sentAt?: string
   shippedAt?: string
   completedAt?: string
+  /** Finance approval / return notes (preferred). */
+  financeNote?: string
+  /** @deprecated Use financeNote; still read from DB column manager_note for older rows. */
   managerNote?: string
-  /** Optional link to a manager-maintained stock catalog line (for PO / tracking). */
+  /** Optional link to an inventory-staff-maintained stock catalog line (for PO / tracking). */
   inventoryCatalogId?: string
 }
 
@@ -80,10 +88,19 @@ export type Delivery = {
   id: string
   purchaseOrderId: string
   quantityExpected: number
+  /** Quantity accepted into good stock (or full accept amount). */
   quantityReceived: number
+  /** Quantity rejected (damage, wrong item, etc.). */
+  quantityRejected: number
   qualityNotes: string
   status: DeliveryStatus
   createdAt: string
+  /** Report: primary item name when rejecting or partial reject. */
+  rejectionItemName?: string
+  /** Report: reason (e.g. damaged, expired, wrong item). */
+  rejectionReason?: string
+  /** Optional photo URLs (paste links), JSON string array in DB. */
+  photoUrls?: string[]
 }
 
 export type InventoryLine = {
@@ -93,6 +110,8 @@ export type InventoryLine = {
   quantity: number
   unit: string
   lastUpdated: string
+  /** When on-hand quantity is at or below this value, inventory sees a low-stock alert. */
+  reorderThreshold: number
   sourceDeliveryId?: string
 }
 
@@ -116,6 +135,8 @@ export type Payment = {
   reference: string
   createdAt: string
   paidAt?: string
+  /** When on hold (e.g. delivery rejected, awaiting replacement). */
+  holdReason?: string
 }
 
 export type AuditEntry = {

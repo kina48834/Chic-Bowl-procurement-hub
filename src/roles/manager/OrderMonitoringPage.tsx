@@ -1,5 +1,4 @@
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 
@@ -14,7 +13,6 @@ export function OrderMonitoringPage() {
           Read-only visibility across every purchase order and its current fulfillment state.
         </p>
       </header>
-      <ProcessGuide guideId="mgr-order-monitoring" />
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-surface-muted/50 text-xs uppercase text-ink-muted">

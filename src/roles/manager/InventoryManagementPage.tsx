@@ -4,8 +4,6 @@ import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
 import type { PRCategory } from '@/procurement/types'
 import { STOCK_CATALOG_CATEGORY_OPTIONS } from '@/procurement/stock-catalog'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
-import type { ProcessGuideId } from '@/shared/guides/process-guides'
 import {
   uiBtnDangerSoft,
   uiBtnPrimary,
@@ -46,12 +44,12 @@ function StatCard({
 }
 
 type InventoryManagementPageProps = {
-  /** Admin uses the same catalog CRUD with admin-scoped copy and guide. */
-  inventoryContext?: 'manager' | 'admin'
+  /** Admin uses the same catalog CRUD with admin-scoped copy. */
+  inventoryContext?: 'inventory-staff' | 'admin'
 }
 
 export function InventoryManagementPage({
-  inventoryContext = 'manager',
+  inventoryContext = 'inventory-staff',
 }: InventoryManagementPageProps) {
   const { user } = useAuth()
   const {
@@ -67,11 +65,13 @@ export function InventoryManagementPage({
   const [category, setCategory] = useState<PRCategory>('ingredients')
   const [quantity, setQuantity] = useState(0)
   const [unit, setUnit] = useState('kg')
+  const [reorderThreshold, setReorderThreshold] = useState(20)
   const [editId, setEditId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editCategory, setEditCategory] = useState<PRCategory>('ingredients')
   const [editQty, setEditQty] = useState(0)
   const [editUnit, setEditUnit] = useState('')
+  const [editReorder, setEditReorder] = useState(20)
 
   const rows = useMemo(
     () => [...state.inventory].sort((a, b) => a.name.localeCompare(b.name)),
@@ -83,11 +83,15 @@ export function InventoryManagementPage({
     const categories = new Set(inv.map((i) => i.category))
     const totalQty = inv.reduce((s, i) => s + Number(i.quantity) || 0, 0)
     const zeroQty = inv.filter((i) => (Number(i.quantity) || 0) === 0).length
+    const lowStock = inv.filter(
+      (i) => Number(i.quantity) <= Number(i.reorderThreshold ?? 0),
+    ).length
     return {
       count: inv.length,
       categoryCount: categories.size,
       totalQty,
       zeroQty,
+      lowStock,
     }
   }, [state.inventory])
 
@@ -102,6 +106,7 @@ export function InventoryManagementPage({
     setEditCategory(cat)
     setEditQty(row.quantity)
     setEditUnit(row.unit)
+    setEditReorder(row.reorderThreshold ?? 20)
   }
 
   const cancelEdit = () => {
@@ -112,12 +117,19 @@ export function InventoryManagementPage({
     e.preventDefault()
     if (!name.trim()) return
     createInventoryLine(
-      { name, category, quantity: Number(quantity) || 0, unit },
+      {
+        name,
+        category,
+        quantity: Number(quantity) || 0,
+        unit,
+        reorderThreshold: Number(reorderThreshold) || 0,
+      },
       actor,
     )
     setName('')
     setQuantity(0)
     setUnit('kg')
+    setReorderThreshold(20)
   }
 
   const handleSaveEdit = (id: string) => {
@@ -128,19 +140,15 @@ export function InventoryManagementPage({
         category: editCategory,
         quantity: editQty,
         unit: editUnit,
+        reorderThreshold: editReorder,
       },
       actor,
     )
     cancelEdit()
   }
 
-  const guideId: ProcessGuideId =
-    inventoryContext === 'admin'
-      ? 'adm-inventory-management'
-      : 'mgr-inventory-management'
-
   const eyebrow =
-    inventoryContext === 'admin' ? 'Administration' : 'Manager workspace'
+    inventoryContext === 'admin' ? 'Administration' : 'Inventory workspace'
   const title =
     inventoryContext === 'admin' ? 'Master stock catalog' : 'Stock catalog'
 
@@ -152,15 +160,15 @@ export function InventoryManagementPage({
         <p className="max-w-3xl text-sm leading-relaxed text-ink-muted">
           {inventoryContext === 'admin' ? (
             <>
-              Full admin access to the same catalog managers maintain. Add, edit, or remove lines here
-              or under <strong className="font-medium text-ink">Manager → Stock catalog</strong>—data is
-              shared. Purchasing links POs to these items; delete stays blocked while a PO references a
-              line. Inventory staff receive goods and adjust exceptions on{' '}
+              Full admin access to the same catalog inventory staff maintain. Add, edit, or remove
+              lines here or under <strong className="font-medium text-ink">Inventory → Stock catalog</strong>
+              —data is shared. Purchasing links POs to these items; delete stays blocked while a PO
+              references a line. Inventory staff receive goods and adjust exceptions on{' '}
               <strong className="font-medium text-ink">Inventory</strong> workflows.
             </>
           ) : (
             <>
-              Maintain master stock items for every role: purchasing links POs to catalog lines; order
+              Maintain master stock items for every role: purchasing links POs to catalog lines; manager
               monitoring shows the connection; inventory staff receive into stock and can adjust
               exceptions on <strong className="font-medium text-ink">Inventory</strong> pages.
             </>
@@ -172,10 +180,10 @@ export function InventoryManagementPage({
         {inventoryContext === 'admin' ? (
           <>
             <Link
-              to="/manager/inventory"
+              to="/inventory/catalog"
               className="rounded-lg border border-border bg-surface-card px-3 py-1.5 font-medium text-ink shadow-sm transition-colors hover:border-accent/50 hover:bg-accent-muted/30"
             >
-              Manager view (same catalog)
+              Inventory view (same catalog)
             </Link>
             <Link
               to="/admin/reports"
@@ -199,22 +207,22 @@ export function InventoryManagementPage({
         ) : (
           <>
             <Link
-              to="/manager/dashboard"
+              to="/inventory/dashboard"
               className="rounded-lg border border-border bg-surface-card px-3 py-1.5 font-medium text-ink shadow-sm transition-colors hover:border-accent/50 hover:bg-accent-muted/30"
             >
-              Manager dashboard
+              Inventory dashboard
             </Link>
             <Link
-              to="/manager/orders"
+              to="/inventory/purchase-requests"
               className="rounded-lg border border-border bg-surface-card px-3 py-1.5 font-medium text-ink shadow-sm transition-colors hover:border-accent/50 hover:bg-accent-muted/30"
             >
-              Order monitoring
+              Purchase requests
             </Link>
             <Link
-              to="/manager/approvals/requests"
+              to="/inventory/levels"
               className="rounded-lg border border-border bg-surface-card px-3 py-1.5 font-medium text-ink shadow-sm transition-colors hover:border-accent/50 hover:bg-accent-muted/30"
             >
-              Approve requests
+              Inventory levels
             </Link>
             <Link
               to="/inventory/receiving"
@@ -234,11 +242,9 @@ export function InventoryManagementPage({
         )}
       </nav>
 
-      <ProcessGuide guideId={guideId} />
-
       <section aria-label="Catalog summary">
         <h2 className="sr-only">Catalog summary</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <StatCard label="Catalog lines" value={stats.count} hint="Rows in this shared list" barClass="bg-accent" />
           <StatCard
             label="Categories in use"
@@ -257,6 +263,12 @@ export function InventoryManagementPage({
             value={stats.zeroQty}
             hint={stats.zeroQty > 0 ? 'Review planning or receiving' : 'No zero-qty lines'}
             barClass={stats.zeroQty > 0 ? 'bg-danger' : 'bg-success'}
+          />
+          <StatCard
+            label="At/below reorder alert"
+            value={stats.lowStock}
+            hint={stats.lowStock > 0 ? 'Submit purchase requests with a reason' : 'No low-stock lines'}
+            barClass={stats.lowStock > 0 ? 'bg-danger' : 'bg-success'}
           />
         </div>
       </section>
@@ -321,6 +333,19 @@ export function InventoryManagementPage({
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
           </div>
+          <div className="space-y-1 lg:col-span-2">
+            <label className="text-xs font-medium text-ink-muted" htmlFor="cat-reorder">
+              Reorder alert (at or below)
+            </label>
+            <input
+              id="cat-reorder"
+              type="number"
+              min={0}
+              className={input}
+              value={reorderThreshold}
+              onChange={(e) => setReorderThreshold(Number(e.target.value))}
+            />
+          </div>
           <div className="flex items-end lg:col-span-1">
             <button type="submit" className={uiBtnPrimary}>
               Add
@@ -344,6 +369,7 @@ export function InventoryManagementPage({
                 <th className="px-4 py-3 font-medium">Item</th>
                 <th className="px-4 py-3 font-medium">Category</th>
                 <th className="px-4 py-3 font-medium">On hand</th>
+                <th className="px-4 py-3 font-medium">Reorder ≤</th>
                 <th className="px-4 py-3 font-medium">Unit</th>
                 <th className="px-4 py-3 font-medium">Updated</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
@@ -352,7 +378,7 @@ export function InventoryManagementPage({
             <tbody className="divide-y divide-border">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-ink-muted">
+                  <td colSpan={7} className="px-4 py-12 text-center text-ink-muted">
                     No catalog lines yet. Add your first item above—Purchasing can link POs to it once it
                     exists.
                   </td>
@@ -393,6 +419,15 @@ export function InventoryManagementPage({
                         </td>
                         <td className="px-4 py-3">
                           <input
+                            type="number"
+                            min={0}
+                            className={input}
+                            value={editReorder}
+                            onChange={(e) => setEditReorder(Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
                             className={input}
                             value={editUnit}
                             onChange={(e) => setEditUnit(e.target.value)}
@@ -425,6 +460,7 @@ export function InventoryManagementPage({
                         <td className="px-4 py-3 font-medium text-ink">{row.name}</td>
                         <td className="px-4 py-3 text-ink-muted">{categoryLabel(row.category)}</td>
                         <td className="px-4 py-3 tabular-nums text-ink">{row.quantity}</td>
+                        <td className="px-4 py-3 tabular-nums text-ink-muted">{row.reorderThreshold}</td>
                         <td className="px-4 py-3 text-ink-muted">{row.unit}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-muted">
                           {new Date(row.lastUpdated).toLocaleString()}

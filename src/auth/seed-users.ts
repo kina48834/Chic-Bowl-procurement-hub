@@ -11,7 +11,7 @@ const IDS = {
   finance: 'f5e6f8a0-b9c1-41d2-a3f4-506172839415',
 } as const
 
-/** Preloaded demo accounts (local storage on first run). Keep passwords in sync with supabase/sql/seed/demo_accounts.sql STEP 1. */
+/** Preloaded demo accounts (local storage on first run). Keep passwords in sync with supabase/sql/seed/demo_accounts.sql. */
 export const SEED_USERS: UserRecord[] = [
   {
     id: IDS.admin,

@@ -1,6 +1,6 @@
 import type { PRCategory } from '@/procurement/types'
 
-/** Categories shared by purchase requests and the manager stock catalog. */
+/** Categories shared by purchase requests and the inventory stock catalog. */
 export const STOCK_CATALOG_CATEGORY_OPTIONS: { value: PRCategory; label: string }[] = [
   { value: 'chicken', label: 'Chicken' },
   { value: 'ingredients', label: 'Ingredients' },

@@ -22,17 +22,18 @@ Run order (numeric):
   13_row_level_security.sql
   14_profile_account_ref.sql — adds profiles.account_ref for existing DBs (included in fresh 02_profiles)
   15_admin_provision_notes.sql — documents how Admin → Add user syncs to auth.users + public.profiles (harmless SELECT)
+  16_procurement_workflow_migration.sql — additive columns for PR reasons, PO finance review, delivery receipt/rejection, inventory reorder thresholds, payment holds (run on existing DBs after 01–15)
 
-Demo accounts (single file — Chic Bowl seed emails, Auth steps, profile upsert, notices):
-  seed/demo_accounts.sql — /login uses email + password only (no role shortcut buttons)
+Demo accounts (single file — Chic Bowl: auth.users + identities + public.profiles):
+  seed/demo_accounts.sql — creates/updates five demo Auth users (pgcrypto bcrypt), email identities, then upserts profiles; passwords match src/auth/seed-users.ts
 
 Seeds (optional; also embedded in ALL.sql):
-  seed/demo_procurement_data.sql — truncates operational tables, loads sample rows (app_settings.system_notes mentions /admin/reports, /admin/inventory, /manager/inventory)
-  seed/demo_accounts.sql — see above (requires auth.users rows from Dashboard → Authentication)
+  seed/demo_procurement_data.sql — truncates operational tables, loads sample rows (app_settings.system_notes mentions /admin/reports, /admin/inventory, /inventory/catalog)
+  seed/demo_accounts.sql — run after 02_profiles (+ 13 RLS); no manual Dashboard Auth user creation required
 
 Merged copies (copy-paste): from repo root run `npm run supabase:merge` (runs `supabase/merge-sql.sh`)
-  ../ALL_SCHEMA.sql — numbered SQL 01–15 (file 15 is documentation-only)
-  ../ALL.sql — 01–15 + demo procurement + demo_accounts (create Auth users before profile upsert)
+  ../ALL_SCHEMA.sql — numbered SQL 01–16 (files 15–16: 15 docs only, 16 workflow migration)
+  ../ALL.sql — 01–16 + demo procurement + demo_accounts (demo_accounts seeds Auth + profiles)
 
 Troubleshooting (still broken after `npm run build`?)
   • Build/lint only affect the Vite app. Supabase is fixed by running SQL in the dashboard and
@@ -40,8 +41,8 @@ Troubleshooting (still broken after `npm run build`?)
   • 42P17 infinite recursion on public.profiles: run the full `13_row_level_security.sql` in SQL
     Editor (is_profile_admin() uses SECURITY DEFINER + row_security off; all profiles policies
     are dropped and recreated).
-  • Invalid login credentials: follow STEP 1 in `seed/demo_accounts.sql`, then run that file
-    (STEP 2). Running the script without Auth users inserts nothing — check the script warnings.
+  • Invalid login credentials (demo emails): run `seed/demo_accounts.sql` in the SQL Editor (creates
+    Auth users + identities + profiles). Ensure pgcrypto can be created; check Messages for warnings.
   • inventory_lines_category_check fails on ALTER: a row’s category is outside the same list as
     purchase_requests—update it to a valid slug (see 09_inventory_lines.sql) or align with the app’s
     src/procurement/stock-catalog.ts.

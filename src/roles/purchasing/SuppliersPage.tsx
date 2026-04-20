@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import {
   uiBtnDangerSoft,
@@ -58,7 +57,6 @@ export function SuppliersPage() {
           Add, update, or retire suppliers;           capture pricing context and reliability scores.
         </p>
       </header>
-      <ProcessGuide guideId="pur-suppliers" />
       <section className="ui-panel p-6">
         <h2 className="text-sm font-semibold text-ink">Add supplier</h2>
         <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={handleAdd}>

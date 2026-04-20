@@ -13,7 +13,7 @@ export const inventoryStaffNav: NavItem[] = [
     path: 'purchase-requests',
     label: 'Purchase requests',
     description:
-      'Purchase request management: create and submit requests (chicken, ingredients, packaging); view status (pending, approved, rejected).',
+      'Purchase request management: create and submit requests with a required reason; view pending and approved (Manager approves only).',
   },
   {
     path: 'receiving',
@@ -26,6 +26,12 @@ export const inventoryStaffNav: NavItem[] = [
     label: 'Inventory integration',
     description:
       'Inventory integration: confirm stock after receiving; view levels (edit manually only when needed).',
+  },
+  {
+    path: 'catalog',
+    label: 'Stock catalog',
+    description:
+      'Add, edit, or remove master stock items used by Purchasing and manager monitoring.',
   },
   {
     path: 'profile',

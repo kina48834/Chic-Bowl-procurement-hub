@@ -1,4 +1,4 @@
-import { ROLE_CAPABILITIES } from '@/shared/guides/role-capabilities'
+import { ROLE_CAPABILITIES } from '@/shared/roles/role-capabilities'
 import { roles } from '@/shared/roles/registry'
 
 export function AssignableRolesPanel() {
@@ -8,8 +8,7 @@ export function AssignableRolesPanel() {
       <p className="mt-1 text-sm text-ink-muted">
         Every role below can be assigned when you provision or edit a user. New accounts are{' '}
         <strong className="font-medium text-ink">not</strong> created on a public registration
-        page—only here in User management. Each card summarizes allowed functions; detailed guides
-        appear on that role&apos;s workspace pages.
+        page—only here in User management. Each card summarizes typical responsibilities for that role.
       </p>
       <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {roles.map((role) => (

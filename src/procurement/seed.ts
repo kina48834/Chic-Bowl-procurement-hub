@@ -1,4 +1,5 @@
 import type { ProcurementState } from '@/procurement/types'
+import { getFixedCatalogInventoryLines } from '@/procurement/fixed-catalog-seed'
 
 const t = '2026-04-18T12:00:00.000Z'
 
@@ -16,8 +17,8 @@ export function getSeedState(): ProcurementState {
         'Access — New accounts are created only in Admin → User management (email + initial password). There is no public self-service registration; visiting /register redirects to Sign in. The Sign in page does not list demo passwords on screen.',
         'Data — Procurement data and these notes stay in this browser (local storage). Clearing site data removes them; user accounts are stored separately.',
         'Currency — Amounts display with consistent formatting across workspaces.',
-        'Stock catalog — Master SKUs are editable from Manager or Admin (shared catalog; delete blocked while a PO references a line).',
-        'Support — Each workspace page includes an embedded process guide for the end-to-end flow.',
+        'Stock catalog — Fixed master list maintained by Inventory Staff or Admin. Low-stock alerts use reorder thresholds per line.',
+        'Workflow — Manager approves purchase requests only (no reject). Finance approves purchase orders. Purchasing revises POs returned by Finance. Inventory inspects deliveries; rejects hold supplier payment until resolved.',
       ].join('\n'),
       lastOverrideNote: '',
     },
@@ -47,7 +48,8 @@ export function getSeedState(): ProcurementState {
       {
         id: pr1,
         category: 'chicken',
-        description: 'Whole chicken — weekly kitchen run',
+        description: 'Chicken breast — weekly production',
+        requestReason: 'Forecasted demand for grill line; current stock below reorder threshold.',
         quantity: 120,
         unit: 'kg',
         status: 'pending',
@@ -57,7 +59,8 @@ export function getSeedState(): ProcurementState {
       {
         id: pr2,
         category: 'packaging',
-        description: 'Eco trays for retail line',
+        description: 'Paper bowls — retail line',
+        requestReason: 'Low stock alert from catalog; need buffer before weekend rush.',
         quantity: 800,
         unit: 'units',
         status: 'approved',
@@ -92,31 +95,14 @@ export function getSeedState(): ProcurementState {
         id: po1,
         purchaseRequestId: pr2,
         supplierId: s2,
-        itemsSummary: 'Eco trays × 800',
+        itemsSummary: 'Paper bowls × 800',
         total: 1840,
         status: 'draft',
         createdAt: t,
       },
     ],
     deliveries: [],
-    inventory: [
-      {
-        id: 'inv-1',
-        name: 'Frozen chicken portions',
-        category: 'chicken',
-        quantity: 340,
-        unit: 'kg',
-        lastUpdated: t,
-      },
-      {
-        id: 'inv-2',
-        name: 'Spice blend A',
-        category: 'ingredients',
-        quantity: 45,
-        unit: 'kg',
-        lastUpdated: t,
-      },
-    ],
+    inventory: getFixedCatalogInventoryLines(t),
     budgetRequests: [
       {
         id: 'seed-budget-1',

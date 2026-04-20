@@ -11,8 +11,10 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
       'draft',
       'pending_approval',
       'approved',
+      'returned_by_finance',
       'sent',
       'shipped',
+      'waiting_replacement',
       'completed',
       'rejected'
     )
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
   shipped_at timestamptz,
   completed_at timestamptz,
   manager_note text,
+  finance_note text,
   inventory_catalog_id text
 );
 
@@ -30,3 +33,5 @@ CREATE INDEX IF NOT EXISTS purchase_orders_supplier_idx ON public.purchase_order
 CREATE INDEX IF NOT EXISTS purchase_orders_status_idx ON public.purchase_orders (status);
 
 COMMENT ON TABLE public.purchase_orders IS 'PO lifecycle; inventory_catalog_id links to inventory_lines when set';
+COMMENT ON COLUMN public.purchase_orders.finance_note IS 'Finance approval note or reason when returning PO to Purchasing.';
+COMMENT ON COLUMN public.purchase_orders.status IS 'pending_approval = Finance queue; returned_by_finance = Purchasing must revise and resubmit.';

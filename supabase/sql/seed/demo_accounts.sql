@@ -1,46 +1,130 @@
--- seed/demo_accounts.sql — SINGLE demo-account SQL for Chic Bowl by 3rd Jen Kitchens.
--- Upserts public.profiles for the five demo emails (mirrors src/auth/seed-users.ts + Sign in page).
--- The /login page is email + password only (no role shortcut buttons; no on-screen demo password list).
--- After sign-in, the app
--- After sign-in, the SPA routes each role to that role’s dashboard (e.g. admin → /admin/dashboard, inventory-staff → /inventory/dashboard).
--- Operational schema + seeds: inventory_lines.category is constrained in 09_inventory_lines.sql to match
--- purchase_requests (05); app_settings copy in seed/demo_procurement_data.sql references /admin/reports and catalog routes.
+-- seed/demo_accounts.sql — Chic Bowl demo Auth users + public.profiles (mirrors src/auth/seed-users.ts).
+-- Run in Supabase SQL Editor (postgres role). Safe to re-run: resets passwords for the five demo emails,
+-- ensures auth.identities rows, then upserts public.profiles.
 --
--- =============================================================================
--- STEP 1 — Authentication (Dashboard → Authentication → Users → Add user)
--- =============================================================================
--- This file does NOT create auth.users. Passwords are checked only by Supabase Auth.
--- Add each user with the exact email and password below (Email provider on; for testing you
--- can disable “Confirm email”):
---
---   Email                      Password              Role in public.profiles (after STEP 2)
---   -------------------------  --------------------  ----------------------
+-- Passwords / roles (same as STEP 1 table below; local SPA uses seed-users.ts when Supabase is unset):
 --   admin@gmail.com            admin1919             admin
 --   inventorystaff@gmail.com   inventorystaff1919    inventory-staff
 --   purchasing@gmail.com       purchasing1919        purchasing
 --   manager@gmail.com          manager1919           manager
 --   finance@gmail.com          finance1919           finance
 --
--- UIDs in Authentication (e.g. 39832e72-…) are created by Supabase and differ per project. Do not
--- paste them into this file — STEP 2 below joins auth.users to profiles by email only.
+-- UUIDs for *new* inserts match src/auth/seed-users.ts. If a demo email already exists in auth.users,
+-- that row is updated (password, confirmation, metadata) and its existing id is kept.
 --
--- Passwords must match src/auth/seed-users.ts (Sign in page + local demo mode).
--- If users already exist with older passwords, open each user in Authentication → Users and set
--- the password to the value in the table above (or delete the user and Add user again).
+-- Requires: pgcrypto (below). RLS on profiles: run full 13_row_level_security.sql if you see policy errors.
 --
 -- =============================================================================
--- STEP 2 — Run this entire script in the SQL Editor (upsert profiles from auth.users)
+-- STEP 1 — pgcrypto + auth.users + auth.identities
 -- =============================================================================
--- If login still fails: wrong password, email not confirmed, or user missing in Auth.
--- “Invalid login credentials” = Auth problem, not this INSERT. “Email not confirmed” → confirm the user under
--- Authentication → Users (not fixed by turning off Confirm email afterward); see 15_admin_provision_notes.sql.
---
--- Local-only app mode: when VITE_SUPABASE_* is unset, demo users come from seed-users.ts in
--- the browser — this script is for hosted Supabase only.
---
--- RLS: Postgres 42P17 on profiles → run supabase/sql/13_row_level_security.sql (full file).
---
--- NOTE: handle_new_user() may have inserted a profile already; this script overwrites demo rows.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DO $$
+DECLARE
+  v_instance uuid;
+  rec RECORD;
+  v_uid uuid;
+BEGIN
+  SELECT u.instance_id
+  INTO v_instance
+  FROM auth.users AS u
+  WHERE u.instance_id IS NOT NULL
+  LIMIT 1;
+
+  IF v_instance IS NULL THEN
+    v_instance := '00000000-0000-0000-0000-000000000000'::uuid;
+  END IF;
+
+  FOR rec IN
+    SELECT * FROM (
+      VALUES
+        ('admin@gmail.com'::text, 'admin1919'::text, 'Admin'::text, 'admin'::text, 'f1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5061'::uuid),
+        ('inventorystaff@gmail.com', 'inventorystaff1919', 'Inventory Staff', 'inventory-staff', 'f2b3c4d5-e6f7-48a9-b1c2-d3e4f5061728'::uuid),
+        ('purchasing@gmail.com', 'purchasing1919', 'Purchasing Staff', 'purchasing', 'f3c4d5e6-f7a8-49b0-c2d3-e4f506172839'::uuid),
+        ('manager@gmail.com', 'manager1919', 'Manager', 'manager', 'f4d5e6f7-a8b9-40c1-d3e4-f50617283940'::uuid),
+        ('finance@gmail.com', 'finance1919', 'Finance', 'finance', 'f5e6f8a0-b9c1-41d2-a3f4-506172839415'::uuid)
+    ) AS t(email, pw, dname, app_role, seed_id)
+  LOOP
+    SELECT u.id
+    INTO v_uid
+    FROM auth.users AS u
+    WHERE lower(trim(u.email)) = lower(trim(rec.email));
+
+    IF v_uid IS NULL THEN
+      INSERT INTO auth.users (
+        instance_id,
+        id,
+        aud,
+        role,
+        email,
+        encrypted_password,
+        email_confirmed_at,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        v_instance,
+        rec.seed_id,
+        'authenticated',
+        'authenticated',
+        lower(trim(rec.email)),
+        crypt(rec.pw, gen_salt('bf')),
+        now(),
+        '{"provider":"email","providers":["email"]}'::jsonb,
+        jsonb_build_object('display_name', rec.dname, 'role', rec.app_role),
+        now(),
+        now()
+      );
+      v_uid := rec.seed_id;
+    ELSE
+      UPDATE auth.users
+      SET
+        encrypted_password = crypt(rec.pw, gen_salt('bf')),
+        email_confirmed_at = COALESCE(auth.users.email_confirmed_at, now()),
+        raw_app_meta_data = COALESCE(auth.users.raw_app_meta_data, '{}'::jsonb) || '{"provider":"email","providers":["email"]}'::jsonb,
+        raw_user_meta_data = jsonb_build_object('display_name', rec.dname, 'role', rec.app_role),
+        updated_at = now()
+      WHERE id = v_uid;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM auth.identities AS i
+      WHERE i.user_id = v_uid
+        AND i.provider = 'email'
+    ) THEN
+      INSERT INTO auth.identities (
+        id,
+        user_id,
+        identity_data,
+        provider,
+        provider_id,
+        last_sign_in_at,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        gen_random_uuid(),
+        v_uid,
+        jsonb_build_object('sub', v_uid::text, 'email', lower(trim(rec.email))),
+        'email',
+        v_uid::text,
+        now(),
+        now(),
+        now()
+      );
+    END IF;
+  END LOOP;
+END;
+$$;
+
+-- =============================================================================
+-- STEP 2 — public.profiles (sync roles; matches app + RLS)
+-- =============================================================================
+-- handle_new_user() may have inserted a profile; this upserts display_name, role, source = seed.
 
 INSERT INTO public.profiles (id, email, display_name, role, source)
 SELECT
@@ -78,7 +162,9 @@ ON CONFLICT (id) DO UPDATE SET
   source = EXCLUDED.source,
   updated_at = now();
 
--- Hint when Auth users are missing (INSERT above affects 0 rows).
+-- =============================================================================
+-- STEP 3 — diagnostics
+-- =============================================================================
 DO $$
 DECLARE
   auth_n int;
@@ -104,17 +190,14 @@ BEGIN
     'finance@gmail.com'
   );
 
-  IF auth_n = 0 THEN
-    RAISE WARNING
-      'demo_accounts.sql: no demo emails in auth.users. Add all five users in Authentication → Users (see header), then run this script again.';
-  ELSIF auth_n < 5 THEN
-    RAISE NOTICE
-      'demo_accounts.sql: % of 5 demo emails exist in auth.users; add the rest, then re-run.', auth_n;
+  IF auth_n < 5 THEN
+    RAISE WARNING 'demo_accounts.sql: expected 5 demo auth users, found %. Check STEP 1 errors above.', auth_n;
   END IF;
 
-  IF auth_n > 0 AND prof_n < auth_n THEN
-    RAISE WARNING
-      'demo_accounts.sql: % profile row(s) for demo emails but % auth user(s). Check RLS on profiles or re-run after fixing 13_row_level_security.sql.', prof_n, auth_n;
+  IF prof_n < 5 THEN
+    RAISE WARNING 'demo_accounts.sql: expected 5 demo profiles, found %. Run 02_profiles + 13_row_level_security if inserts failed.', prof_n;
   END IF;
+
+  RAISE NOTICE 'demo_accounts.sql: demo auth users = %, profiles = %.', auth_n, prof_n;
 END;
 $$;

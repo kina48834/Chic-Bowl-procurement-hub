@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { uiBtnSecondary, uiBtnXs } from '@/shared/ui/button'
 
 const input =
@@ -24,7 +23,6 @@ export function InventoryLevelsPage() {
           exception is justified (cycle count, spoilage).
         </p>
       </header>
-      <ProcessGuide guideId="inv-levels" />
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-surface-muted/50 text-xs uppercase text-ink-muted">
@@ -32,17 +30,21 @@ export function InventoryLevelsPage() {
               <th className="px-3 py-2">Item</th>
               <th className="px-3 py-2">Category</th>
               <th className="px-3 py-2">On hand</th>
+              <th className="px-3 py-2">Reorder alert at</th>
               <th className="px-3 py-2">Unit</th>
               <th className="px-3 py-2">Last updated</th>
               <th className="px-3 py-2">Adjust (exception)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row) => (
-              <tr key={row.id}>
+            {rows.map((row) => {
+              const low = Number(row.quantity) <= Number(row.reorderThreshold ?? 0)
+              return (
+              <tr key={row.id} className={low ? 'bg-danger-muted/10' : undefined}>
                 <td className="px-3 py-2 font-medium">{row.name}</td>
                 <td className="px-3 py-2 capitalize text-ink-muted">{row.category}</td>
                 <td className="px-3 py-2">{row.quantity}</td>
+                <td className="px-3 py-2 tabular-nums text-ink-muted">{row.reorderThreshold}</td>
                 <td className="px-3 py-2">{row.unit}</td>
                 <td className="px-3 py-2 text-ink-muted">
                   {new Date(row.lastUpdated).toLocaleString()}
@@ -73,7 +75,8 @@ export function InventoryLevelsPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

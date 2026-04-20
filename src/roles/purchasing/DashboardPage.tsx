@@ -3,36 +3,33 @@ import {
   RoleDashboardGrid,
   RoleDashboardHeader,
 } from '@/shared/components/role-dashboard'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
-
 export function PurchasingDashboardPage() {
   return (
     <div className="space-y-10">
       <RoleDashboardHeader
-        title="Procurement execution"
-        subtitle="Source suppliers, compare quotes, issue POs, and follow shipments through completion."
+        title="Purchasing"
+        subtitle="Suppliers, quotations, purchase orders, and tracking."
       />
-      <ProcessGuide guideId="pur-dashboard" />
       <RoleDashboardGrid>
         <RoleDashboardCard
           to="suppliers"
           title="Suppliers"
-          description="Maintain vendor master data, pricing, and reliability notes."
+          description="Vendor records and contacts."
         />
         <RoleDashboardCard
           to="quotations"
           title="Quotations"
-          description="Collect and compare supplier responses before awarding business."
+          description="Quotes and comparisons."
         />
         <RoleDashboardCard
           to="purchase-orders"
           title="Purchase orders"
-          description="Turn approved demand into purchase orders and send them out."
+          description="Draft, submit, and send POs."
         />
         <RoleDashboardCard
           to="order-tracking"
           title="Order tracking"
-          description="Monitor PO status from commitment through delivery."
+          description="Status and shipment updates."
         />
       </RoleDashboardGrid>
     </div>

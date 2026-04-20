@@ -1,4 +1,4 @@
--- ALL_SCHEMA.sql — schema + RLS + migrations + notes (01–15). File 15 is documentation-only.
+-- ALL_SCHEMA.sql — schema + RLS + migrations + notes (01–16). Files 15–16: 15 docs only, 16 workflow migration.
 -- Regenerate: npm run supabase:merge
 --
 -- For one file that also includes demo procurement data and demo profile upserts, use ALL.sql.
@@ -163,9 +163,10 @@ CREATE TABLE IF NOT EXISTS public.purchase_requests (
     )
   ),
   description text NOT NULL,
+  request_reason text NOT NULL DEFAULT '',
   quantity numeric NOT NULL,
   unit text NOT NULL,
-  status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+  status text NOT NULL CHECK (status IN ('pending', 'approved')),
   requested_by_email text NOT NULL,
   created_at timestamptz NOT NULL,
   reviewed_at timestamptz,
@@ -175,7 +176,12 @@ CREATE TABLE IF NOT EXISTS public.purchase_requests (
 CREATE INDEX IF NOT EXISTS purchase_requests_status_idx ON public.purchase_requests (status);
 CREATE INDEX IF NOT EXISTS purchase_requests_requested_by_idx ON public.purchase_requests (lower(requested_by_email));
 
+-- Existing databases: CREATE TABLE IF NOT EXISTS does not add new columns. Keep in sync with 16_procurement_workflow_migration.sql.
+ALTER TABLE public.purchase_requests
+  ADD COLUMN IF NOT EXISTS request_reason text NOT NULL DEFAULT '';
+
 COMMENT ON TABLE public.purchase_requests IS 'PR workflow; mirrors PurchaseRequest';
+COMMENT ON COLUMN public.purchase_requests.request_reason IS 'Why inventory needs the item; required in the app for traceability.';
 
 -- ===== 06_quotations.sql =====
 -- 06_quotations.sql — supplier quotations (mirrors Quotation).
@@ -208,8 +214,10 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
       'draft',
       'pending_approval',
       'approved',
+      'returned_by_finance',
       'sent',
       'shipped',
+      'waiting_replacement',
       'completed',
       'rejected'
     )
@@ -219,6 +227,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
   shipped_at timestamptz,
   completed_at timestamptz,
   manager_note text,
+  finance_note text,
   inventory_catalog_id text
 );
 
@@ -227,6 +236,8 @@ CREATE INDEX IF NOT EXISTS purchase_orders_supplier_idx ON public.purchase_order
 CREATE INDEX IF NOT EXISTS purchase_orders_status_idx ON public.purchase_orders (status);
 
 COMMENT ON TABLE public.purchase_orders IS 'PO lifecycle; inventory_catalog_id links to inventory_lines when set';
+COMMENT ON COLUMN public.purchase_orders.finance_note IS 'Finance approval note or reason when returning PO to Purchasing.';
+COMMENT ON COLUMN public.purchase_orders.status IS 'pending_approval = Finance queue; returned_by_finance = Purchasing must revise and resubmit.';
 
 -- ===== 08_deliveries.sql =====
 -- 08_deliveries.sql — receiving / deliveries (mirrors Delivery).
@@ -236,19 +247,28 @@ CREATE TABLE IF NOT EXISTS public.deliveries (
   purchase_order_id text NOT NULL REFERENCES public.purchase_orders (id) ON DELETE CASCADE,
   quantity_expected numeric NOT NULL,
   quantity_received numeric NOT NULL,
+  quantity_rejected numeric NOT NULL DEFAULT 0,
   quality_notes text NOT NULL DEFAULT '',
-  status text NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+  status text NOT NULL CHECK (
+    status IN ('pending', 'accepted', 'rejected', 'partially_accepted')
+  ),
+  rejection_item_name text,
+  rejection_reason text,
+  photo_urls text,
   created_at timestamptz NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS deliveries_po_idx ON public.deliveries (purchase_order_id);
 
 COMMENT ON TABLE public.deliveries IS 'Goods receipt; mirrors Delivery';
+COMMENT ON COLUMN public.deliveries.quantity_received IS 'Quantity accepted into good stock (full or partial accept).';
+COMMENT ON COLUMN public.deliveries.quantity_rejected IS 'Quantity rejected (damage, wrong item, etc.).';
+COMMENT ON COLUMN public.deliveries.photo_urls IS 'Optional JSON array of image URLs for rejection reports.';
 
 -- ===== 09_inventory_lines.sql =====
 -- 09_inventory_lines.sql — stock catalog + on-hand lines (mirrors src/procurement/types.ts InventoryLine).
 --
--- SPA (Vite): same catalog UX at /manager/inventory and /admin/inventory (shared data via ProcurementProvider).
+-- SPA (Vite): same catalog UX at /inventory/catalog and /admin/inventory (shared data via ProcurementProvider).
 -- Executive cross-cuts (PO book, spend by supplier, catalog counts) live at /admin/reports.
 -- Category text must stay aligned with public.purchase_requests (05_purchase_requests.sql) and
 -- src/procurement/stock-catalog.ts (PRCategory) so PRs, POs, and the stock catalog dropdowns stay one vocabulary.
@@ -260,12 +280,30 @@ CREATE TABLE IF NOT EXISTS public.inventory_lines (
   quantity numeric NOT NULL,
   unit text NOT NULL,
   last_updated timestamptz NOT NULL,
+  reorder_threshold numeric NOT NULL DEFAULT 20,
   source_delivery_id text
 );
 
 CREATE INDEX IF NOT EXISTS inventory_lines_category_idx ON public.inventory_lines (category);
 
 -- Idempotent: (re)applies if the table already existed from an older export without this check.
+-- Normalize legacy categories (e.g. "received", mixed case, extra spaces) before adding the CHECK.
+UPDATE public.inventory_lines
+SET category = CASE
+  WHEN lower(trim(category)) IN (
+    'chicken',
+    'ingredients',
+    'packaging',
+    'equipment',
+    'beverages',
+    'cleaning',
+    'frozen',
+    'dry_goods',
+    'other'
+  ) THEN lower(trim(category))
+  ELSE 'other'
+END;
+
 ALTER TABLE public.inventory_lines DROP CONSTRAINT IF EXISTS inventory_lines_category_check;
 ALTER TABLE public.inventory_lines ADD CONSTRAINT inventory_lines_category_check CHECK (
   category IN (
@@ -282,13 +320,16 @@ ALTER TABLE public.inventory_lines ADD CONSTRAINT inventory_lines_category_check
 );
 
 COMMENT ON TABLE public.inventory_lines IS
-  'Manager/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app.';
+  'Inventory staff/admin stock catalog; purchase_orders.inventory_catalog_id may reference id; mirrors InventoryLine in the app.';
 
 COMMENT ON COLUMN public.inventory_lines.category IS
   'Same closed set as purchase_requests.category (see 05_purchase_requests.sql); UI labels in src/procurement/stock-catalog.ts.';
 
 COMMENT ON COLUMN public.inventory_lines.quantity IS
-  'Baseline on-hand quantity shown as “On-hand” in Manager/Admin stock catalog screens.';
+  'Baseline on-hand quantity shown as “On-hand” in Inventory/Admin stock catalog screens.';
+
+COMMENT ON COLUMN public.inventory_lines.reorder_threshold IS
+  'When on-hand is at or below this value, the app shows a low-stock alert for Inventory Staff.';
 
 COMMENT ON COLUMN public.inventory_lines.source_delivery_id IS
   'Optional link to a receiving/delivery record when the app tracks provenance.';
@@ -327,8 +368,9 @@ CREATE TABLE IF NOT EXISTS public.payments (
   supplier_id text NOT NULL REFERENCES public.suppliers (id) ON DELETE RESTRICT,
   purchase_order_id text REFERENCES public.purchase_orders (id) ON DELETE SET NULL,
   amount numeric NOT NULL,
-  status text NOT NULL CHECK (status IN ('pending', 'paid')),
+  status text NOT NULL CHECK (status IN ('pending', 'paid', 'on_hold')),
   reference text NOT NULL DEFAULT '',
+  hold_reason text,
   created_at timestamptz NOT NULL,
   paid_at timestamptz
 );
@@ -336,7 +378,17 @@ CREATE TABLE IF NOT EXISTS public.payments (
 CREATE INDEX IF NOT EXISTS payments_supplier_idx ON public.payments (supplier_id);
 CREATE INDEX IF NOT EXISTS payments_status_idx ON public.payments (status);
 
+-- Existing databases: CREATE TABLE IF NOT EXISTS does not add new columns or widen CHECKs. Keep in sync with 16_procurement_workflow_migration.sql.
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS hold_reason text;
+
+ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_status_check;
+ALTER TABLE public.payments ADD CONSTRAINT payments_status_check CHECK (
+  status IN ('pending', 'paid', 'on_hold')
+);
+
 COMMENT ON TABLE public.payments IS 'AP / payments; mirrors Payment';
+COMMENT ON COLUMN public.payments.hold_reason IS 'Why payment is on hold (e.g. delivery rejected, awaiting replacement).';
 
 -- ===== 12_audit_log.sql =====
 -- 12_audit_log.sql — audit trail (mirrors AuditEntry).
@@ -379,6 +431,24 @@ REVOKE ALL ON FUNCTION public.is_profile_admin() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_profile_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_profile_admin() TO service_role;
 
+CREATE OR REPLACE FUNCTION public.current_profile_role()
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+SET row_security = off
+AS $$
+  SELECT role::text
+  FROM public.profiles
+  WHERE id = auth.uid()
+  LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.current_profile_role() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_profile_role() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_profile_role() TO service_role;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
@@ -417,7 +487,8 @@ CREATE POLICY "profiles_update_own" ON public.profiles
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Demo / internal hub: allow any signed-in user full CRUD on operational tables.
+-- Demo / internal hub: allow any signed-in user full CRUD on operational tables
+-- except inventory_lines (mutations there are restricted to inventory-staff/admin below).
 DO $$
 DECLARE
   t text;
@@ -429,7 +500,6 @@ BEGIN
     'quotations',
     'purchase_orders',
     'deliveries',
-    'inventory_lines',
     'budget_requests',
     'payments',
     'audit_log'
@@ -443,6 +513,19 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON public.inventory_lines;
+DROP POLICY IF EXISTS "inventory_lines_select_authenticated" ON public.inventory_lines;
+DROP POLICY IF EXISTS "inventory_lines_mutate_inventory_staff_admin" ON public.inventory_lines;
+
+CREATE POLICY "inventory_lines_select_authenticated" ON public.inventory_lines
+  FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "inventory_lines_mutate_inventory_staff_admin" ON public.inventory_lines
+  FOR ALL TO authenticated
+  USING (public.current_profile_role() IN ('inventory-staff', 'admin'))
+  WITH CHECK (public.current_profile_role() IN ('inventory-staff', 'admin'));
 
 -- Admins: full profile visibility (is_profile_admin bypasses RLS on the inner read).
 CREATE POLICY "profiles_admin_select_all" ON public.profiles
@@ -525,7 +608,7 @@ COMMENT ON COLUMN public.profiles.account_ref IS 'Random public account id for d
 -- after the accounts list refreshes (public.profiles is the source for roles in the app).
 --
 -- Related SPA routes (hosted + local): /admin/user-management (provision), /admin/inventory and
--- /manager/inventory (shared stock catalog → inventory_lines), /admin/reports (cross-cutting KPIs).
+-- /inventory/catalog (shared stock catalog → inventory_lines), /admin/reports (cross-cutting KPIs).
 --
 -- Passwords:
 --   • public.profiles has no password column; credentials are stored only in auth.users (GoTrue).
@@ -535,4 +618,74 @@ COMMENT ON COLUMN public.profiles.account_ref IS 'Random public account id for d
 -- Demo Chic Bowl sign-in (emails/passwords + profile upsert): seed/demo_accounts.sql only.
 
 SELECT 1 AS admin_user_management_uses_auth_signup_and_public_profiles;
+
+-- ===== 16_procurement_workflow_migration.sql =====
+-- 16_procurement_workflow_migration.sql — additive migration for existing databases that already ran 01–15.
+-- Safe to re-run: uses IF NOT EXISTS / guarded ALTERs where possible.
+--
+-- After this file:
+--   • Purchase requests: request_reason; status only pending|approved (legacy rejected rows become pending).
+--   • Purchase orders: finance_note; status includes returned_by_finance, waiting_replacement.
+--   • Deliveries: quantity_rejected, rejection fields, partially_accepted status.
+--   • Inventory lines: reorder_threshold.
+--   • Payments: on_hold, hold_reason.
+
+-- ---- purchase_requests ----
+ALTER TABLE public.purchase_requests
+  ADD COLUMN IF NOT EXISTS request_reason text NOT NULL DEFAULT '';
+
+ALTER TABLE public.purchase_requests DROP CONSTRAINT IF EXISTS purchase_requests_status_check;
+UPDATE public.purchase_requests SET status = 'pending' WHERE status = 'rejected';
+ALTER TABLE public.purchase_requests ADD CONSTRAINT purchase_requests_status_check CHECK (
+  status IN ('pending', 'approved')
+);
+
+-- ---- purchase_orders ----
+ALTER TABLE public.purchase_orders
+  ADD COLUMN IF NOT EXISTS finance_note text;
+
+ALTER TABLE public.purchase_orders DROP CONSTRAINT IF EXISTS purchase_orders_status_check;
+ALTER TABLE public.purchase_orders ADD CONSTRAINT purchase_orders_status_check CHECK (
+  status IN (
+    'draft',
+    'pending_approval',
+    'approved',
+    'returned_by_finance',
+    'sent',
+    'shipped',
+    'waiting_replacement',
+    'completed',
+    'rejected'
+  )
+);
+
+-- ---- deliveries ----
+ALTER TABLE public.deliveries
+  ADD COLUMN IF NOT EXISTS quantity_rejected numeric NOT NULL DEFAULT 0;
+ALTER TABLE public.deliveries
+  ADD COLUMN IF NOT EXISTS rejection_item_name text;
+ALTER TABLE public.deliveries
+  ADD COLUMN IF NOT EXISTS rejection_reason text;
+ALTER TABLE public.deliveries
+  ADD COLUMN IF NOT EXISTS photo_urls text;
+
+UPDATE public.deliveries SET quantity_rejected = 0 WHERE quantity_rejected IS NULL;
+
+ALTER TABLE public.deliveries DROP CONSTRAINT IF EXISTS deliveries_status_check;
+ALTER TABLE public.deliveries ADD CONSTRAINT deliveries_status_check CHECK (
+  status IN ('pending', 'accepted', 'rejected', 'partially_accepted')
+);
+
+-- ---- inventory_lines ----
+ALTER TABLE public.inventory_lines
+  ADD COLUMN IF NOT EXISTS reorder_threshold numeric NOT NULL DEFAULT 20;
+
+-- ---- payments ----
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS hold_reason text;
+
+ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_status_check;
+ALTER TABLE public.payments ADD CONSTRAINT payments_status_check CHECK (
+  status IN ('pending', 'paid', 'on_hold')
+);
 

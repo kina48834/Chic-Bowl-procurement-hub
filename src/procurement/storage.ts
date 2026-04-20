@@ -3,6 +3,38 @@ import { getSeedState } from '@/procurement/seed'
 
 const KEY = 'procurement-hub.domain.v1'
 
+function normalizeProcurementState(raw: ProcurementState): ProcurementState {
+  return {
+    ...raw,
+    purchaseRequests: raw.purchaseRequests.map((p) => ({
+      ...p,
+      requestReason: p.requestReason ?? '',
+      status: p.status === 'approved' ? 'approved' : 'pending',
+    })),
+    purchaseOrders: raw.purchaseOrders.map((po) => ({
+      ...po,
+      financeNote: po.financeNote ?? po.managerNote,
+    })),
+    deliveries: raw.deliveries.map((d) => ({
+      ...d,
+      quantityRejected: d.quantityRejected ?? 0,
+    })),
+    inventory: raw.inventory.map((i) => ({
+      ...i,
+      reorderThreshold: i.reorderThreshold ?? 20,
+    })),
+    payments: raw.payments.map((pay) => ({
+      ...pay,
+      status:
+        pay.status === 'paid'
+          ? 'paid'
+          : pay.status === 'on_hold'
+            ? 'on_hold'
+            : 'pending',
+    })),
+  }
+}
+
 /** Empty shell used before Supabase load or when signed out in cloud mode. */
 export function emptyProcurementState(): ProcurementState {
   return {
@@ -43,7 +75,7 @@ export function loadProcurementState(): ProcurementState {
     if (raw) {
       const parsed = JSON.parse(raw) as ProcurementState
       if (parsed && Array.isArray(parsed.purchaseRequests)) {
-        return mergeSettingsFromSeed(parsed, seed)
+        return mergeSettingsFromSeed(normalizeProcurementState(parsed), seed)
       }
     }
   } catch {

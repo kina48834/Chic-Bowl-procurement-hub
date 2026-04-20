@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 
@@ -40,7 +39,6 @@ export function ReportsPage() {
           reviews.
         </p>
       </header>
-      <ProcessGuide guideId="mgr-reports" />
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-border p-4">
           <p className="text-xs font-medium text-ink-muted">Open PO value</p>

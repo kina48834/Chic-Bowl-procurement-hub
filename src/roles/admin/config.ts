@@ -26,7 +26,7 @@ export const adminNav: NavItem[] = [
     path: 'inventory',
     label: 'Stock catalog',
     description:
-      'Add, edit, or remove master inventory lines (shared with Manager; delete blocked when a PO references a line).',
+      'Add, edit, or remove master inventory lines (shared with Inventory Staff; delete blocked when a PO references a line).',
   },
   {
     path: 'suppliers',

@@ -1,6 +1,5 @@
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { uiBtnSecondary, uiBtnXs } from '@/shared/ui/button'
@@ -11,10 +10,15 @@ export function OrderTrackingPage() {
   const actor = user?.email ?? 'unknown'
 
   const flow: { label: string; statuses: string[] }[] = [
-    { label: 'Draft / approval', statuses: ['draft', 'pending_approval', 'approved'] },
+    {
+      label: 'Draft / Finance',
+      statuses: ['draft', 'pending_approval', 'approved', 'returned_by_finance'],
+    },
     { label: 'With supplier', statuses: ['sent'] },
     { label: 'In transit', statuses: ['shipped'] },
-    { label: 'Done', statuses: ['completed', 'rejected'] },
+    { label: 'Closed / replacement',
+      statuses: ['completed', 'rejected', 'waiting_replacement'],
+    },
   ]
 
   return (
@@ -26,7 +30,6 @@ export function OrderTrackingPage() {
           dispatches goods (opens receiving).
         </p>
       </header>
-      <ProcessGuide guideId="pur-order-tracking" />
       <div className="grid gap-2 sm:grid-cols-4">
         {flow.map((col) => (
           <div key={col.label} className="ui-panel-soft p-3">

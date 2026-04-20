@@ -15,17 +15,17 @@ import { financeMeta, financeNav } from '@/roles/finance/config'
 import { FinanceDashboardPage } from '@/roles/finance/DashboardPage'
 import { BudgetReviewPage } from '@/roles/finance/BudgetReviewPage'
 import { FinanceReportsPage } from '@/roles/finance/FinanceReportsPage'
+import { FinancePurchaseOrderApprovalsPage } from '@/roles/finance/PurchaseOrderApprovalsPage'
 import { PaymentsPage } from '@/roles/finance/PaymentsPage'
 import { inventoryStaffMeta, inventoryStaffNav } from '@/roles/inventory-staff/config'
 import { InventoryStaffDashboardPage } from '@/roles/inventory-staff/DashboardPage'
+import { InventoryCatalogPage } from '@/roles/inventory-staff/InventoryCatalogPage'
 import { InventoryLevelsPage } from '@/roles/inventory-staff/InventoryLevelsPage'
 import { PurchaseRequestsPage } from '@/roles/inventory-staff/PurchaseRequestsPage'
 import { ReceivingPage } from '@/roles/inventory-staff/ReceivingPage'
 import { managerMeta, managerNav } from '@/roles/manager/config'
 import { ManagerDashboardPage } from '@/roles/manager/DashboardPage'
-import { InventoryManagementPage } from '@/roles/manager/InventoryManagementPage'
 import { OrderMonitoringPage } from '@/roles/manager/OrderMonitoringPage'
-import { PurchaseOrderApprovalsPage } from '@/roles/manager/PurchaseOrderApprovalsPage'
 import { ReportsPage as ManagerReportsPage } from '@/roles/manager/ReportsPage'
 import { RequestApprovalsPage } from '@/roles/manager/RequestApprovalsPage'
 import { purchasingMeta, purchasingNav } from '@/roles/purchasing/config'
@@ -67,6 +67,7 @@ export default function App() {
             <Route path="purchase-requests" element={<PurchaseRequestsPage />} />
             <Route path="receiving" element={<ReceivingPage />} />
             <Route path="levels" element={<InventoryLevelsPage />} />
+            <Route path="catalog" element={<InventoryCatalogPage />} />
             <Route path="profile" element={<WorkspaceProfilePage />} />
           </Route>
           <Route
@@ -96,13 +97,8 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ManagerDashboardPage />} />
             <Route path="approvals/requests" element={<RequestApprovalsPage />} />
-            <Route
-              path="approvals/orders"
-              element={<PurchaseOrderApprovalsPage />}
-            />
             <Route path="reports" element={<ManagerReportsPage />} />
             <Route path="orders" element={<OrderMonitoringPage />} />
-            <Route path="inventory" element={<InventoryManagementPage />} />
             <Route path="profile" element={<WorkspaceProfilePage />} />
           </Route>
           <Route
@@ -116,6 +112,10 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<FinanceDashboardPage />} />
             <Route path="budget" element={<BudgetReviewPage />} />
+            <Route
+              path="po-approvals"
+              element={<FinancePurchaseOrderApprovalsPage />}
+            />
             <Route path="payments" element={<PaymentsPage />} />
             <Route path="reports" element={<FinanceReportsPage />} />
             <Route path="profile" element={<WorkspaceProfilePage />} />
@@ -134,7 +134,7 @@ export default function App() {
             <Route path="settings" element={<SystemSettingsPage />} />
             <Route
               path="inventory"
-              element={<InventoryManagementPage inventoryContext="admin" />}
+              element={<InventoryCatalogPage inventoryContext="admin" />}
             />
             <Route path="suppliers" element={<SuppliersAdminPage />} />
             <Route path="reports" element={<ReportsAdminPage />} />

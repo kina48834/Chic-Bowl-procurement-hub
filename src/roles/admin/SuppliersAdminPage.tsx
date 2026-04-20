@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import {
   uiBtnDangerSoft,
@@ -29,7 +28,6 @@ export function SuppliersAdminPage() {
           records.
         </p>
       </header>
-      <ProcessGuide guideId="adm-suppliers" />
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-surface-muted/50 text-xs uppercase text-ink-muted">

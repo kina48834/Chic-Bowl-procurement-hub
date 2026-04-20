@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useProcurement } from '@/procurement/ProcurementProvider'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { formatPhp } from '@/shared/format/money'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { uiBtnPrimary, uiBtnSuccess, uiBtnXs } from '@/shared/ui/button'
@@ -46,7 +45,6 @@ export function PaymentsPage() {
           executes.
         </p>
       </header>
-      <ProcessGuide guideId="fin-payments" />
       <section className="ui-panel p-6">
         <h2 className="text-sm font-semibold text-ink">Record payment</h2>
         <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={handleAdd}>
@@ -105,6 +103,7 @@ export function PaymentsPage() {
               <th className="px-3 py-2 text-left">Supplier</th>
               <th className="px-3 py-2 text-left">Amount</th>
               <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Hold / notes</th>
               <th className="px-3 py-2 text-left">Action</th>
             </tr>
           </thead>
@@ -119,6 +118,9 @@ export function PaymentsPage() {
                   <td className="px-3 py-2">
                     <StatusBadge status={pay.status} />
                   </td>
+                  <td className="max-w-[12rem] px-3 py-2 text-xs text-ink-muted">
+                    {pay.holdReason ?? '—'}
+                  </td>
                   <td className="px-3 py-2">
                     {pay.status === 'pending' ? (
                       <button
@@ -128,6 +130,8 @@ export function PaymentsPage() {
                       >
                         Mark paid
                       </button>
+                    ) : pay.status === 'on_hold' ? (
+                      <span className="text-xs text-danger-ink">On hold — do not pay until receiving is resolved.</span>
                     ) : (
                       <span className="text-xs text-ink-muted">
                         {pay.paidAt ? new Date(pay.paidAt).toLocaleString() : '—'}

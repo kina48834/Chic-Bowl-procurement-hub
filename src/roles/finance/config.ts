@@ -16,6 +16,12 @@ export const financeNav: NavItem[] = [
       'Finance integration: review budget requests; approve or deny funding for purchases.',
   },
   {
+    path: 'po-approvals',
+    label: 'PO approval',
+    description:
+      'Approve purchase orders before Purchasing sends them to suppliers, or return with a note for revision.',
+  },
+  {
     path: 'payments',
     label: 'Supplier payments',
     description:

@@ -44,13 +44,17 @@ function mapSupplierRow(row: Record<string, unknown>): Supplier {
 }
 
 function mapPRRow(row: Record<string, unknown>): PurchaseRequest {
+  const rawStatus = String(row.status ?? 'pending')
+  const status: PurchaseRequest['status'] =
+    rawStatus === 'approved' ? 'approved' : 'pending'
   return {
     id: String(row.id),
     category: row.category as PurchaseRequest['category'],
     description: String(row.description ?? ''),
+    requestReason: String(row.request_reason ?? ''),
     quantity: num(row.quantity),
     unit: String(row.unit ?? ''),
-    status: row.status as PurchaseRequest['status'],
+    status,
     requestedByEmail: String(row.requested_by_email ?? ''),
     createdAt: String(row.created_at ?? ''),
     reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
@@ -71,6 +75,8 @@ function mapQuotationRow(row: Record<string, unknown>): Quotation {
 }
 
 function mapPORow(row: Record<string, unknown>): PurchaseOrder {
+  const financeNote = row.finance_note ? String(row.finance_note) : undefined
+  const managerNote = row.manager_note ? String(row.manager_note) : undefined
   return {
     id: String(row.id),
     purchaseRequestId: String(row.purchase_request_id ?? ''),
@@ -82,7 +88,8 @@ function mapPORow(row: Record<string, unknown>): PurchaseOrder {
     sentAt: row.sent_at ? String(row.sent_at) : undefined,
     shippedAt: row.shipped_at ? String(row.shipped_at) : undefined,
     completedAt: row.completed_at ? String(row.completed_at) : undefined,
-    managerNote: row.manager_note ? String(row.manager_note) : undefined,
+    financeNote: financeNote ?? managerNote,
+    managerNote,
     inventoryCatalogId: row.inventory_catalog_id
       ? String(row.inventory_catalog_id)
       : undefined,
@@ -90,14 +97,33 @@ function mapPORow(row: Record<string, unknown>): PurchaseOrder {
 }
 
 function mapDeliveryRow(row: Record<string, unknown>): Delivery {
+  let photoUrls: string[] | undefined
+  if (row.photo_urls != null) {
+    try {
+      const p = row.photo_urls
+      if (Array.isArray(p)) {
+        photoUrls = p.map(String)
+      } else if (typeof p === 'string' && p.trim()) {
+        photoUrls = JSON.parse(p) as string[]
+      }
+    } catch {
+      photoUrls = undefined
+    }
+  }
   return {
     id: String(row.id),
     purchaseOrderId: String(row.purchase_order_id ?? ''),
     quantityExpected: num(row.quantity_expected),
     quantityReceived: num(row.quantity_received),
+    quantityRejected: num(row.quantity_rejected),
     qualityNotes: String(row.quality_notes ?? ''),
     status: row.status as Delivery['status'],
     createdAt: String(row.created_at ?? ''),
+    rejectionItemName: row.rejection_item_name
+      ? String(row.rejection_item_name)
+      : undefined,
+    rejectionReason: row.rejection_reason ? String(row.rejection_reason) : undefined,
+    photoUrls,
   }
 }
 
@@ -109,6 +135,7 @@ function mapInventoryRow(row: Record<string, unknown>): InventoryLine {
     quantity: num(row.quantity),
     unit: String(row.unit ?? ''),
     lastUpdated: String(row.last_updated ?? ''),
+    reorderThreshold: num(row.reorder_threshold ?? 20),
     sourceDeliveryId: row.source_delivery_id
       ? String(row.source_delivery_id)
       : undefined,
@@ -131,15 +158,19 @@ function mapBudgetRow(row: Record<string, unknown>): BudgetRequest {
 }
 
 function mapPaymentRow(row: Record<string, unknown>): Payment {
+  const st = String(row.status ?? 'pending')
+  const status: Payment['status'] =
+    st === 'paid' ? 'paid' : st === 'on_hold' ? 'on_hold' : 'pending'
   return {
     id: String(row.id),
     supplierId: String(row.supplier_id ?? ''),
     purchaseOrderId: row.purchase_order_id ? String(row.purchase_order_id) : undefined,
     amount: num(row.amount),
-    status: row.status as Payment['status'],
+    status,
     reference: String(row.reference ?? ''),
     createdAt: String(row.created_at ?? ''),
     paidAt: row.paid_at ? String(row.paid_at) : undefined,
+    holdReason: row.hold_reason ? String(row.hold_reason) : undefined,
   }
 }
 
@@ -203,6 +234,7 @@ export function purchaseRequestToRow(p: PurchaseRequest): Record<string, unknown
     id: p.id,
     category: p.category,
     description: p.description,
+    request_reason: p.requestReason,
     quantity: p.quantity,
     unit: p.unit,
     status: p.status,
@@ -237,7 +269,8 @@ export function purchaseOrderToRow(po: PurchaseOrder): Record<string, unknown> {
     sent_at: po.sentAt ?? null,
     shipped_at: po.shippedAt ?? null,
     completed_at: po.completedAt ?? null,
-    manager_note: po.managerNote ?? null,
+    finance_note: po.financeNote ?? po.managerNote ?? null,
+    manager_note: null,
     inventory_catalog_id: po.inventoryCatalogId ?? null,
   }
 }
@@ -248,9 +281,13 @@ export function deliveryToRow(d: Delivery): Record<string, unknown> {
     purchase_order_id: d.purchaseOrderId,
     quantity_expected: d.quantityExpected,
     quantity_received: d.quantityReceived,
+    quantity_rejected: d.quantityRejected,
     quality_notes: d.qualityNotes,
     status: d.status,
     created_at: d.createdAt,
+    rejection_item_name: d.rejectionItemName ?? null,
+    rejection_reason: d.rejectionReason ?? null,
+    photo_urls: d.photoUrls?.length ? JSON.stringify(d.photoUrls) : null,
   }
 }
 
@@ -262,6 +299,7 @@ export function inventoryLineToRow(i: InventoryLine): Record<string, unknown> {
     quantity: i.quantity,
     unit: i.unit,
     last_updated: i.lastUpdated,
+    reorder_threshold: i.reorderThreshold,
     source_delivery_id: i.sourceDeliveryId ?? null,
   }
 }
@@ -287,6 +325,7 @@ export function paymentToRow(p: Payment): Record<string, unknown> {
     amount: p.amount,
     status: p.status,
     reference: p.reference,
+    hold_reason: p.holdReason ?? null,
     created_at: p.createdAt,
     paid_at: p.paidAt ?? null,
   }

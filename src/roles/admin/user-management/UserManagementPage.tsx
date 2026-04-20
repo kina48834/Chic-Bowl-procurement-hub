@@ -1,6 +1,5 @@
 import { useAuth } from '@/auth/useAuth'
 import { FeaturePage } from '@/shared/components/FeaturePage'
-import { ProcessGuide } from '@/shared/components/ProcessGuide'
 import { AddUserForm } from '@/roles/admin/user-management/AddUserForm'
 import { AssignableRolesPanel } from '@/roles/admin/user-management/AssignableRolesPanel'
 import { UserAccountsTable } from '@/roles/admin/user-management/UserAccountsTable'
@@ -55,7 +54,6 @@ export function UserManagementPage() {
           </p>
         </aside>
       ) : null}
-      <ProcessGuide guideId="adm-user-management" />
       <AssignableRolesPanel />
       <AddUserForm />
       <section className="space-y-4">
