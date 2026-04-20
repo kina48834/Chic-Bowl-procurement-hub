@@ -1,4 +1,4 @@
--- ALL.sql — full bundle: schema (01–16) + demo procurement seed + demo account profiles.
+-- ALL.sql — full bundle: schema (01–17) + demo procurement seed + demo account profiles.
 -- Regenerate: npm run supabase:merge
 --
 -- Before running:
@@ -6,7 +6,7 @@
 --     (bcrypt passwords) and upserts public.profiles. No manual Authentication → Users step required.
 --
 -- Sections in order:
---   1) 01_extensions … 16_procurement_workflow_migration (15 documents admin provision; 16 additive workflow migration)
+--   1) 01_extensions … 17_audit_log_indexes (15 documents admin provision; 16 workflow migration; 17 audit indexes)
 --   2) seed/demo_procurement_data.sql — truncates operational tables, loads sample rows
 --   3) seed/demo_accounts.sql — demo Auth users + identities + public.profiles
 --
@@ -695,6 +695,16 @@ ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_status_check;
 ALTER TABLE public.payments ADD CONSTRAINT payments_status_check CHECK (
   status IN ('pending', 'paid', 'on_hold')
 );
+
+-- ===== 17_audit_log_indexes.sql =====
+-- 17_audit_log_indexes.sql — reporting helpers for audit trail (optional migration).
+-- App writes audit_log on procurement actions (e.g. PR approved); indexes speed Admin audit UI + reports.
+
+CREATE INDEX IF NOT EXISTS audit_log_action_idx ON public.audit_log (action);
+CREATE INDEX IF NOT EXISTS audit_log_actor_lower_idx ON public.audit_log (lower(actor_email));
+
+COMMENT ON INDEX public.audit_log_action_idx IS 'Filter audit rows by action (e.g. PR approved)';
+COMMENT ON INDEX public.audit_log_actor_lower_idx IS 'Filter audit rows by actor email';
 
 -- ===== seed/demo_procurement_data.sql =====
 -- seed/demo_procurement_data.sql — demo procurement rows (mirrors src/procurement/seed.ts).

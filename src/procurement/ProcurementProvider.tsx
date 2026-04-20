@@ -23,7 +23,11 @@ import {
   loadProcurementState,
   saveProcurementState,
 } from '@/procurement/storage'
-import { loadProcurementFromSupabase, persistProcurementToSupabase } from '@/procurement/supabase/sync'
+import {
+  loadProcurementFromSupabase,
+  persistProcurementToSupabase,
+  persistPurchaseRequestApprovalToSupabase,
+} from '@/procurement/supabase/sync'
 import { isSupabaseConfigured } from '@/lib/supabaseClient'
 
 function audit(
@@ -333,7 +337,7 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         ...row,
         status: 'approved' as const,
         reviewedAt: new Date().toISOString(),
-        reviewNote: note,
+        reviewNote: note.trim() || undefined,
       }
       const purchaseRequests = [...prev.purchaseRequests]
       purchaseRequests[idx] = updated
@@ -342,9 +346,22 @@ export function ProcurementProvider({ children }: { children: ReactNode }) {
         next,
         actorEmail,
         'PR approved',
-        `${row.description}: ${note || '—'}`,
+        `${row.description}: ${note.trim() || '—'}`,
       )
-      return commit(next)
+      const head = next.auditLog[0]
+      if (isSupabaseConfigured()) {
+        void (async () => {
+          try {
+            await persistPurchaseRequestApprovalToSupabase(updated, head)
+            await persistProcurementToSupabase(next)
+          } catch (err) {
+            console.error('Supabase PR approval sync failed', err)
+          }
+        })()
+      } else {
+        saveProcurementState(next)
+      }
+      return next
     })
   }, [])
 

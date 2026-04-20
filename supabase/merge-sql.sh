@@ -7,7 +7,7 @@ OUT_SCHEMA="$ROOT/supabase/ALL_SCHEMA.sql"
 OUT_ALL="$ROOT/supabase/ALL.sql"
 
 emit_numbered_schema() {
-  for n in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16; do
+  for n in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17; do
     for f in "$SQL"/${n}_*.sql; do
       if [[ -f "$f" ]]; then
         echo "-- ===== $(basename "$f") ====="
@@ -20,7 +20,7 @@ emit_numbered_schema() {
 
 {
   cat << 'HEADER'
--- ALL_SCHEMA.sql — schema + RLS + migrations + notes (01–16). Files 15–16: 15 docs only, 16 workflow migration.
+-- ALL_SCHEMA.sql — schema + RLS + migrations + notes (01–17). Files 15–16: 15 docs only, 16 workflow migration; 17 audit indexes.
 -- Regenerate: npm run supabase:merge
 --
 -- For one file that also includes demo procurement data and demo profile upserts, use ALL.sql.
@@ -32,7 +32,7 @@ HEADER
 
 {
   cat << 'HEADER'
--- ALL.sql — full bundle: schema (01–16) + demo procurement seed + demo account profiles.
+-- ALL.sql — full bundle: schema (01–17) + demo procurement seed + demo account profiles.
 -- Regenerate: npm run supabase:merge
 --
 -- Before running:
@@ -40,7 +40,7 @@ HEADER
 --     (bcrypt passwords) and upserts public.profiles. No manual Authentication → Users step required.
 --
 -- Sections in order:
---   1) 01_extensions … 16_procurement_workflow_migration (15 documents admin provision; 16 additive workflow migration)
+--   1) 01_extensions … 17_audit_log_indexes (15 documents admin provision; 16 workflow migration; 17 audit indexes)
 --   2) seed/demo_procurement_data.sql — truncates operational tables, loads sample rows
 --   3) seed/demo_accounts.sql — demo Auth users + identities + public.profiles
 --

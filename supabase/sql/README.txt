@@ -23,6 +23,7 @@ Run order (numeric):
   14_profile_account_ref.sql — adds profiles.account_ref for existing DBs (included in fresh 02_profiles)
   15_admin_provision_notes.sql — documents how Admin → Add user syncs to auth.users + public.profiles (harmless SELECT)
   16_procurement_workflow_migration.sql — additive columns for PR reasons, PO finance review, delivery receipt/rejection, inventory reorder thresholds, payment holds (run on existing DBs after 01–15)
+  17_audit_log_indexes.sql — indexes on audit_log.action and actor email (optional; speeds audit / reports)
 
 Demo accounts (single file — Chic Bowl: auth.users + identities + public.profiles):
   seed/demo_accounts.sql — creates/updates five demo Auth users (pgcrypto bcrypt), email identities, then upserts profiles; passwords match src/auth/seed-users.ts
@@ -32,8 +33,8 @@ Seeds (optional; also embedded in ALL.sql):
   seed/demo_accounts.sql — run after 02_profiles (+ 13 RLS); no manual Dashboard Auth user creation required
 
 Merged copies (copy-paste): from repo root run `npm run supabase:merge` (runs `supabase/merge-sql.sh`)
-  ../ALL_SCHEMA.sql — numbered SQL 01–16 (files 15–16: 15 docs only, 16 workflow migration)
-  ../ALL.sql — 01–16 + demo procurement + demo_accounts (demo_accounts seeds Auth + profiles)
+  ../ALL_SCHEMA.sql — numbered SQL 01–17 (files 15–16: 15 docs only, 16 workflow migration; 17 audit indexes)
+  ../ALL.sql — 01–17 + demo procurement + demo_accounts (demo_accounts seeds Auth + profiles)
 
 Troubleshooting (still broken after `npm run build`?)
   • Build/lint only affect the Vite app. Supabase is fixed by running SQL in the dashboard and

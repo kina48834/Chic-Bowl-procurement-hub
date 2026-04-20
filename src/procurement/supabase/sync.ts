@@ -1,5 +1,5 @@
 import { requireSupabase } from '@/lib/supabaseClient'
-import type { ProcurementState } from '@/procurement/types'
+import type { AuditEntry, ProcurementState, PurchaseRequest } from '@/procurement/types'
 import {
   auditEntryToRow,
   budgetRequestToRow,
@@ -17,6 +17,9 @@ async function deleteOrphans(
   table: string,
   keepIds: string[],
 ): Promise<void> {
+  // Never delete all rows when the in-memory slice is empty (e.g. before Supabase load finishes).
+  // That would wipe the DB while the UI could still be catching up.
+  if (keepIds.length === 0) return
   const client = requireSupabase()
   const { data, error } = await client.from(table).select('id')
   if (error) throw error
@@ -69,6 +72,20 @@ function stateIdsForTable(table: (typeof DELETE_ORPHAN_ORDER)[number], state: Pr
     default:
       return []
   }
+}
+
+/** Immediate write for manager PR approval (caller typically follows with full persist). */
+export async function persistPurchaseRequestApprovalToSupabase(
+  pr: PurchaseRequest,
+  auditEntry: AuditEntry,
+): Promise<void> {
+  const client = requireSupabase()
+  const { error: prErr } = await client
+    .from('purchase_requests')
+    .upsert(purchaseRequestToRow(pr), { onConflict: 'id' })
+  if (prErr) throw prErr
+  const { error: auditErr } = await client.from('audit_log').insert(auditEntryToRow(auditEntry))
+  if (auditErr) throw auditErr
 }
 
 export async function loadProcurementFromSupabase(): Promise<ProcurementState> {
